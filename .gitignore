@@ -1,5 +1,5 @@
 # Default ignored files
-/shelf/
+/.idea/shelf/
 /workspace.xml
 # Editor-based HTTP Client requests
 /httpRequests/
@@ -59,6 +59,7 @@ coverage.xml
 # Environments
 .env
 .venv
+*.venv
 venv/
 env/
 ENV/
@@ -76,3 +77,12 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Esclude tutti i file di configurazione dei moduli di JetBrains (.iml)
+*.iml
+
+
+# Cache di Python
+*.pyc
+*.pyo
+*.pyd
