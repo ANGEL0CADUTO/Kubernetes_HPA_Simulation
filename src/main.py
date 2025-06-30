@@ -3,9 +3,11 @@ from src import config
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
 # ----- MODIFICA QUI -----
-from src.analysis.plotter import plot_pod_history, plot_queue_history, plot_response_time_trend, plot_response_time_histogram
+from src.analysis.plotter import plot_pod_history, plot_queue_history, plot_response_time_trend, \
+    plot_response_time_histogram
 # -------------------------
 from src.simulation.simulator import Simulator
+
 
 def main():
     """
@@ -31,7 +33,7 @@ def main():
     plot_response_time_trend(metrics)  # Chiama la nuova funzione
 
     # Genera il grafico con gli istogrammi
-    plot_response_time_histogram(metrics) # Nome funzione cambiato per chiarezza
+    plot_response_time_histogram(metrics)  # Nome funzione cambiato per chiarezza
     # --------------------
 
     print("\n--- Esecuzione Terminata ---")
@@ -39,6 +41,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
     # elisa è stata qui :)

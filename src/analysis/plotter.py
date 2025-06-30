@@ -1,10 +1,13 @@
-import matplotlib
-matplotlib.use('Qt5Agg')
+from os import makedirs
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from src.utils.metrics import Metrics
-from src.config import RequestType
+import os
+
+matplotlib.use('Qt5Agg')
+
 
 # Le funzioni plot_pod_history e plot_queue_history rimangono INVARIATE...
 def plot_pod_history(metrics: Metrics, config):
@@ -21,7 +24,11 @@ def plot_pod_history(metrics: Metrics, config):
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
+    # Salva il grafico in una cartella 'plots'
+    makedirs('plots', exist_ok=True)
+    plt.savefig('plots/pod_count_history.png', dpi=300, bbox_inches='tight')
     plt.show()
+
 
 def plot_queue_history(metrics: Metrics):
     if not metrics.queue_length_history:
@@ -34,7 +41,10 @@ def plot_queue_history(metrics: Metrics):
     plt.ylabel("Numero di Richieste in Coda")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
+    makedirs('plots', exist_ok=True)
+    plt.savefig('plots/queue_length_history.png', dpi=300, bbox_inches='tight')
     plt.show()
+
 
 # ----- NUOVA FUNZIONE DI PLOT -----
 def plot_response_time_trend(metrics: Metrics):
@@ -64,9 +74,9 @@ def plot_response_time_trend(metrics: Metrics):
     window_size = 50
     if len(responses) >= window_size:
         # Usa np.convolve per un calcolo efficiente della media mobile
-        moving_avg = np.convolve(responses, np.ones(window_size)/window_size, mode='valid')
+        moving_avg = np.convolve(responses, np.ones(window_size) / window_size, mode='valid')
         # Gli istanti di tempo per la media mobile corrispondono alla fine di ogni finestra
-        moving_avg_times = times[window_size-1:]
+        moving_avg_times = times[window_size - 1:]
         plt.plot(moving_avg_times, moving_avg, label=f'Media Mobile (finestra={window_size})')
 
     plt.title("Andamento del Tempo di Risposta Medio nel Tempo")
@@ -75,6 +85,8 @@ def plot_response_time_trend(metrics: Metrics):
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.legend()
     plt.tight_layout()
+    makedirs('plots', exist_ok=True)
+    plt.savefig('plots/ response_time_trend.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
@@ -106,4 +118,6 @@ def plot_response_time_histogram(metrics: Metrics):
 
     plt.suptitle("Distribuzione (Istogrammi) dei Tempi di Risposta", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    makedirs('plots', exist_ok=True)
+    plt.savefig('plots/response_time_histogram.png', dpi=300, bbox_inches='tight')
     plt.show()

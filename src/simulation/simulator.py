@@ -3,6 +3,7 @@ from src.model.request import Request
 from src.controller.hpa import HPA
 from src.service.service import PodService
 
+
 class Simulator:
     """
     Classe principale che orchestra tutti i componenti della simulazione.
@@ -48,7 +49,8 @@ class Simulator:
             )
             self.metrics.record_request_generation()
 
-            print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name}) generata.")
+            print(
+                f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name}) generata.")
             self.request_queue.put(new_request)
 
     def pod_worker(self, pod_id):
@@ -64,14 +66,16 @@ class Simulator:
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request.arrival_time
 
-                print(f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento richiesta {request.request_id}. Attesa: {wait_time:.4f}s")
+                print(
+                    f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento richiesta {request.request_id}. Attesa: {wait_time:.4f}s")
 
                 service_time = self.service.get_service_time(request.req_type)
                 yield self.env.timeout(service_time)
 
-                completion_time = self.env.now # Momento in cui il servizio finisce
+                completion_time = self.env.now  # Momento in cui il servizio finisce
                 response_time = completion_time - request.arrival_time
-                print(f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento richiesta {request.request_id}. Tempo di risposta: {response_time:.4f}s")
+                print(
+                    f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento richiesta {request.request_id}. Tempo di risposta: {response_time:.4f}s")
 
                 # ----- MODIFICA QUI -----
                 # Passiamo anche il 'completion_time' per il grafico temporale
@@ -82,6 +86,7 @@ class Simulator:
                 break
 
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Rilevato segnale di stop, terminazione.")
+
     def metrics_recorder(self):
         # ... (Questa funzione rimane INVARIATA) ...
         while True:
@@ -145,7 +150,8 @@ class Simulator:
     def run(self):
         # ... (Questa funzione rimane INVARIATA) ...
         print("--- Avvio Simulatore (Versione con ID Corretti Definitiva) ---")
-        print(f"Modello base: Iniziali {self.config.INITIAL_PODS} Pods (Max: {self.config.MAX_PODS}), Coda FIFO, HPA {'Abilitato' if self.config.HPA_ENABLED else 'Disabilitato'}")
+        print(
+            f"Modello base: Iniziali {self.config.INITIAL_PODS} Pods (Max: {self.config.MAX_PODS}), Coda FIFO, HPA {'Abilitato' if self.config.HPA_ENABLED else 'Disabilitato'}")
 
         self.env.process(self.request_generator())
         self.env.process(self.metrics_recorder())

@@ -3,6 +3,7 @@ class PodService:
     Contiene la logica di business per processare le richieste.
     In questo caso, si occupa di calcolare il tempo di servizio.
     """
+
     def __init__(self, rng, config):
         self.rng = rng
         self.config = config

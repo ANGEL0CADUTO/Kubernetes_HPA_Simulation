@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from src.config import RequestType
 
+
 @dataclass
 class Request:
     """

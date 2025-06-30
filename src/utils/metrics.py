@@ -2,10 +2,12 @@ from collections import defaultdict
 import numpy as np
 from src.config import RequestType
 
+
 class Metrics:
     """
     Classe per raccogliere e calcolare le metriche di performance durante la simulazione.
     """
+
     def __init__(self):
         # Le liste ora conterranno tuple (timestamp, valore) per i grafici temporali
         self.response_times_history = defaultdict(list)
