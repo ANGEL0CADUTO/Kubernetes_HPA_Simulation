@@ -50,7 +50,10 @@ class SimulatorWithPriority:
         """
         req_id_counter = 0
         service_classes = list(self.config.SERVICE_CLASSES_CONFIG.keys())
-        traffic_shares = [self.config.SERVICE_CLASSES_CONFIG[p]["traffic_share"] for p in service_classes]
+
+        ordered_priorities = sorted(self.config.SERVICE_CLASSES_CONFIG.keys())
+        traffic_shares = [self.config.SERVICE_CLASSES_CONFIG[p]["traffic_share"] for p in ordered_priorities]
+
 
         while True:
             time_to_next = self.rng.exponential(1.0 / self.config.TOTAL_ARRIVAL_RATE)
@@ -61,7 +64,10 @@ class SimulatorWithPriority:
             req_probs = list(self.config.TRAFFIC_PROFILE.values())
 
             chosen_type = self.rng.choice(req_types, p=req_probs)
-            chosen_priority = random.choices(service_classes, weights=traffic_shares, k=1)[0]
+
+            #todo questo credo sia da correggere: non sono sicura sia il modo corretto di generare priorità
+            chosen_priority = random.choices(ordered_priorities, weights=traffic_shares, k=1)[0]
+
             class_config = self.config.SERVICE_CLASSES_CONFIG[chosen_priority]
             avg_service_time = class_config["avg_service_time_ms"] / 1000.0
             service_time = self.rng.exponential(avg_service_time)
@@ -92,7 +98,7 @@ class SimulatorWithPriority:
         # Prendi la coda giusta per quel worker e quella priorità
         target_queue = self.worker_queues[worker_id][request.priority]
 
-        print(f"{self.env.now:.2f} [Distributor]: Richiesta {request.request_id} instradata al Worker {worker_id}, Coda {request.priority.name}.")
+        print(f"{self.env.now:.2f} [Distributor]: Richiesta {request.request_id} instradata alla Coda {request.priority.name}.")
 
         # Metti la richiesta nella coda specifica del worker
         # Qui potresti aggiungere la logica per la coda piena, se necessario

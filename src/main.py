@@ -45,7 +45,7 @@ def main():
     # --- ESECUZIONE DELLA SIMULAZIONE MIGLIORATA (PRIORITÀ PER WORKER) ---
     print("\n--- SCENARIO MIGLIORATO (ABSTRACT PRIORITY) ---")
 
-    #rng_prio = np.random.default_rng(seed=numpy_seed)
+    #rng_prio = np.random.default_rng(seed=numpy_seed) #da controllare gestione del RNG!!! capire qual è il modo migliore
     metrics_prio = MetricsWithPriority(config)
     simulator_prio = SimulatorWithPriority(config, metrics_prio, rng)
     simulator_prio.run()

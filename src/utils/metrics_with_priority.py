@@ -44,7 +44,8 @@ class MetricsWithPriority:
         self.pod_counts.append(pod_count)
         self.queue_lengths.append(queue_len)
 
-    def record_request_metrics(self, completion_time: float, request: PriorityRequest, response_time: float, wait_time: float):
+    def record_request_metrics(self, completion_time: float, request: PriorityRequest,
+                               response_time: float, wait_time: float):
         """
         Registra le metriche di una singola richiesta completata,
         catalogandole in base alla sua priorità.
@@ -53,6 +54,7 @@ class MetricsWithPriority:
 
         # Incrementa i contatori
         self.requests_completed_by_priority[prio] += 1
+
 
         # Aggiungi i valori alle liste appropriate
         self.response_times_by_priority[prio].append(response_time)
@@ -110,3 +112,5 @@ class MetricsWithPriority:
                 print(f"  - Tempo di Risposta Medio: {avg_response_time:.4f}s")
                 print(f"  - Tempo di Attesa Medio:   {avg_wait_time:.4f}s")
                 print(f"  - Tempo di Risposta Massimo: {max_response_time:.4f}s")
+            else:
+                print(f"Richieste completate: 0\n")
