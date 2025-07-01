@@ -1,6 +1,7 @@
 import numpy as np
 from src import config
 from src.analysis.dati_report import export_summary_to_excel, export_summary_to_csv, save_run_data
+from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
 # ----- MODIFICA QUI -----
@@ -9,6 +10,7 @@ from src.analysis.plotter import plot_pod_history, plot_queue_history, plot_resp
     plot_cumulative_requests, plot_wait_time_trend, plot_wait_time_boxplot
 # -------------------------
 from src.simulation.simulator import Simulator
+from src.utils.metrics_with_priority import MetricsWithPriority
 
 
 def main():
@@ -38,7 +40,25 @@ def main():
     generate_all_plots(metrics, config)
     # --------------------
 
-    print("\n--- Esecuzione Terminata ---")
+    print("\n--- Esecuzione baseline Terminata ---")
+
+    # --- ESECUZIONE DELLA SIMULAZIONE MIGLIORATA (PRIORITÀ PER WORKER) ---
+    print("\n--- SCENARIO MIGLIORATO (ABSTRACT PRIORITY) ---")
+
+    #rng_prio = np.random.default_rng(seed=numpy_seed)
+    metrics_prio = MetricsWithPriority(config)
+    simulator_prio = SimulatorWithPriority(config, metrics_prio, rng)
+    simulator_prio.run()
+
+    metrics_prio.print_summary()
+    export_summary_to_excel(metrics_prio)
+    export_summary_to_csv(metrics_prio)
+
+    generate_all_plots(metrics_prio, config)
+
+    print("\n--- Esecuzione migliorativa Terminata ---")
+
+
 
 
 def generate_all_plots(metrics: Metrics, config):

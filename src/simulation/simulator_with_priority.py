@@ -4,7 +4,7 @@ import simpy
 import random
 
 from src.config import Priority
-from src.model.request import Request
+from src.model.request import PriorityRequest
 from src.controller.hpa import HPA
 from src.service.service import PodService
 
@@ -62,7 +62,7 @@ class SimulatorWithPriority:
             avg_service_time = class_config["avg_service_time_ms"] / 1000.0
             service_time = self.rng.exponential(avg_service_time)
 
-            new_request = Request(
+            new_request = PriorityRequest(
                 request_id=req_id_counter,
                 arrival_time=self.env.now,
                 priority=chosen_priority,
@@ -74,7 +74,7 @@ class SimulatorWithPriority:
             # Invece di una coda centrale, chiamiamo un processo distributore
             self.env.process(self.request_distributor(new_request))
 
-    def request_distributor(self, request: Request):
+    def request_distributor(self, request: PriorityRequest):
         """
         Processo che riceve una richiesta e la instrada alla coda del worker
         corretto usando una politica Round Robin.

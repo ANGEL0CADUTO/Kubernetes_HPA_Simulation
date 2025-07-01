@@ -8,6 +8,7 @@ LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 # --- CONFIGURAZIONE DEL WORKER E DEI POD ---
 # Concettualmente abbiamo un solo worker node.
 # L'HPA scalerà i pod su questo nodo fino a un massimo di 8.
+NUM_WORKERS = 1
 INITIAL_PODS = 2            # Partiamo con 2 Pod attivi
 MAX_PODS = 8                # Massimo numero di Pod consentito
 
