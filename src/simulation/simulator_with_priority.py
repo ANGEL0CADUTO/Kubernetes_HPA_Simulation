@@ -94,37 +94,39 @@ class SimulatorWithPriority:
         """
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Avviato e pronto a ricevere lavoro.")
 
-        while True:
-            request_to_process = None
-            is_idle = False
+        try:
+            while True:
+                request_to_process = None
+                is_idle = False
 
-            # 1. Controlla le code in ordine di priorità
-            if len(self.high_priority_queue.items) > 0:
-                request_to_process = yield self.high_priority_queue.get()
-            elif len(self.medium_priority_queue.items) > 0:
-                request_to_process = yield self.medium_priority_queue.get()
-            elif len(self.low_priority_queue.items) > 0:
-                request_to_process = yield self.low_priority_queue.get()
+                # 1. Controlla le code in ordine di priorità
+                if len(self.high_priority_queue.items) > 0:
+                    request_to_process = yield self.high_priority_queue.get()
+                elif len(self.medium_priority_queue.items) > 0:
+                    request_to_process = yield self.medium_priority_queue.get()
+                elif len(self.low_priority_queue.items) > 0:
+                    request_to_process = yield self.low_priority_queue.get()
 
-            # 2. Se tutte le code sono vuote si mette in attesa, appena arriva una richiesta "si sveglia"
-            if request_to_process is None:
-                is_idle = True
-                # `Spiegazione: any_of` qui è perfetto per l'attesa. Quando il pod si sveglia,
-                # il loop `while` ripartirà e la catena di if/elif sopra garantirà
-                # che la richiesta a priorità più alta venga servita.
-                result = yield self.env.any_of([
-                    self.high_priority_queue.get(),
-                    self.medium_priority_queue.get(),
-                    self.low_priority_queue.get()
-                ])
-                request_to_process = list(result.values())[0]
+                # 2. Se tutte le code sono vuote si mette in attesa, appena arriva una richiesta "si sveglia"
+                if request_to_process is None:
+                    is_idle = True
+                    self.idle_pod_ids.append(pod_id)
 
-            # Prima del processamento indichiamo che il pod non è più idle
-            if is_idle:
-                self.idle_pod_ids.remove(pod_id)
+                    # `Spiegazione: any_of` qui è perfetto per l'attesa. Quando il pod si sveglia,
+                    # il loop `while` ripartirà e la catena di if/elif sopra garantirà
+                    # che la richiesta a priorità più alta venga servita.
+                    result = yield self.env.any_of([
+                        self.high_priority_queue.get(),
+                        self.medium_priority_queue.get(),
+                        self.low_priority_queue.get()
+                    ])
+                    request_to_process = list(result.values())[0]
 
-            # 3. Processamento della richiesta
-            try:
+                # Prima del processamento indichiamo che il pod non è più idle
+                if is_idle:
+                    self.idle_pod_ids.remove(pod_id)
+
+                # 3. Processamento della richiesta
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request_to_process.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento rich. {request_to_process.request_id} "
@@ -139,13 +141,12 @@ class SimulatorWithPriority:
 
                 self.metrics.record_request_metrics(completion_time, request_to_process, response_time, wait_time)
 
-            # Rimozione del pod dalla lista idle in caso di spegnimento del pod (scale down)
-            except simpy.Interrupt:
-                if pod_id in self.idle_pod_ids:
-                    self.idle_pod_ids.remove(pod_id)
+        # SCALE DOWN: Interruzione e rimozione del pod dalla lista idle in caso di spegnimento del pod
+        except simpy.Interrupt:
+            if pod_id in self.idle_pod_ids:
+                self.idle_pod_ids.remove(pod_id)
 
-                print(f"{self.env.now:.2f} [Pod {pod_id}]: Ricevuto segnale di stop, terminazione.")
-                break
+            print(f"{self.env.now:.2f} [Pod {pod_id}]: Ricevuto segnale di stop, terminazione.")
 
     def metrics_recorder(self):
 
@@ -169,11 +170,7 @@ class SimulatorWithPriority:
         """
         Calcola il numero esatto di Pod che stanno attualmente processando una richiesta.
         """
-        # Il numero totale di Pod attivi è len(self.active_pods)
-        # Il numero di Pod inattivi è len(self.idle_pod_ids)
-        # Quindi, il numero di Pod occupati è la differenza.
 
-        # self.active_pods è un dizionario pod_id -> processo, quindi usiamo len()
         return len(self.active_pods) - len(self.idle_pod_ids)
 
     def scale_to(self, desired_replicas):
