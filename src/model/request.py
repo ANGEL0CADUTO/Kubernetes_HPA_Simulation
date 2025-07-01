@@ -17,8 +17,6 @@ class Request:
                              Determina da quale coda verrà servita.
         service_time (float): Tempo necessario a un Pod per processare questa specifica
                               richiesta. Dipende dal tipo/priorità.
-
-
     """
     request_id: int
     req_type: RequestType
