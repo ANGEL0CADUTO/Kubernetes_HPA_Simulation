@@ -24,6 +24,7 @@ SCALE_UP_COOLDOWN = 60      # 1 minuto prima di poter fare un altro scale-up
 SCALE_DOWN_COOLDOWN = 300   # 5 minuti prima di poter fare un altro scale-down
 # Non modelliamo più il POD_STARTUP_TIME perché la capacità della risorsa è istantanea
 
+
 # --- DEFINIZIONE TIPI DI RICHIESTA ---
 class RequestType(Enum):
     LOGIN = 1
@@ -32,8 +33,9 @@ class RequestType(Enum):
     ANALYTICS = 4
     ADD_TO_CART = 5
 
+
 # --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
-TOTAL_ARRIVAL_RATE = 5     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
+TOTAL_ARRIVAL_RATE = 15     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
 
 TRAFFIC_PROFILE = {
     RequestType.LOGIN: 0.15,
@@ -43,12 +45,14 @@ TRAFFIC_PROFILE = {
     RequestType.ADD_TO_CART: 0.15
 }
 
+
 # --- FUNZIONE HELPER PER CALCOLARE I PARAMETRI LOG-NORMALE ---
 def get_lognormal_params(mean, stdev):
     if mean <= 0: return (0, 0)
     mu_log = math.log(mean**2 / math.sqrt(stdev**2 + mean**2))
     sigma_log = math.sqrt(math.log(stdev**2 / mean**2 + 1))
     return mu_log, sigma_log
+
 
 # --- CONFIGURAZIONE TEMPI DI SERVIZIO ---
 SERVICE_TIME_CONFIG = {
