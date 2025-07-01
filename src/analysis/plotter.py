@@ -25,7 +25,7 @@ def plot_pod_history(metrics: Metrics, config):
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
     # Salva il grafico in una cartella 'plots'
-    makedirs('plots', exist_ok=True)
+    ensure_plot_dir()
     plt.savefig('plots/pod_count_history.png', dpi=300, bbox_inches='tight')
     plt.show()
 
@@ -41,7 +41,7 @@ def plot_queue_history(metrics: Metrics):
     plt.ylabel("Numero di Richieste in Coda")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
-    makedirs('plots', exist_ok=True)
+    ensure_plot_dir()
     plt.savefig('plots/queue_length_history.png', dpi=300, bbox_inches='tight')
     plt.show()
 
@@ -85,7 +85,7 @@ def plot_response_time_trend(metrics: Metrics):
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.legend()
     plt.tight_layout()
-    makedirs('plots', exist_ok=True)
+    ensure_plot_dir()
     plt.savefig('plots/ response_time_trend.png', dpi=300, bbox_inches='tight')
     plt.show()
 
@@ -118,6 +118,178 @@ def plot_response_time_histogram(metrics: Metrics):
 
     plt.suptitle("Distribuzione (Istogrammi) dei Tempi di Risposta", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    makedirs('plots', exist_ok=True)
+    ensure_plot_dir()
     plt.savefig('plots/response_time_histogram.png', dpi=300, bbox_inches='tight')
     plt.show()
+
+
+def plot_response_time_boxplot(metrics: Metrics):
+    # Mostra boxplot dei tempi di risposta per ogni tipo di richiesta.
+
+    req_types = sorted(metrics.response_times_data.keys(), key=lambda e: e.name)
+    data = [metrics.response_times_data[rt] for rt in req_types if metrics.response_times_data[rt]]
+
+    if not data:
+        print("Nessun dato per il boxplot.")
+        return
+
+    plt.figure(figsize=(12, 6))
+    plt.boxplot(data, patch_artist=True, notch=True, boxprops=dict(facecolor='skyblue', color='black'))
+    plt.xticks(ticks=range(1, len(req_types) + 1), labels=[rt.name for rt in req_types], rotation=45)
+    plt.title("Boxplot dei Tempi di Risposta per Tipo di Richiesta")
+    plt.ylabel("Tempo di Risposta (s)")
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/response_time_boxplot.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_request_heatmap(metrics: Metrics, bin_size=10):
+    # Heatmap: intensità delle richieste nel tempo divise per tipo.
+    # Bin_size = secondi per ogni colonna della heatmap
+
+    import seaborn as sns
+    import pandas as pd
+
+    req_types = sorted(metrics.response_times_history.keys(), key=lambda e: e.name)
+
+    all_data = []
+
+    for req_type in req_types:
+        for timestamp, _ in metrics.response_times_history[req_type]:
+            all_data.append((req_type.name, int(timestamp // bin_size) * bin_size))  # Bucket
+
+    if not all_data:
+        print("Nessun dato per la heatmap.")
+        return
+
+    df = pd.DataFrame(all_data, columns=["Tipo", "TimeBin"])
+    heatmap_data = df.groupby(["Tipo", "TimeBin"]).size().unstack(fill_value=0)
+
+    plt.figure(figsize=(12, 6))
+    sns.heatmap(heatmap_data, cmap="YlGnBu", linewidths=0.5, linecolor='gray')
+    plt.title("Heatmap: Intensità delle Richieste nel Tempo")
+    plt.xlabel("Tempo (s)")
+    plt.ylabel("Tipo di Richiesta")
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/request_heatmap.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_response_time_scatter(metrics: Metrics):
+    # Scatter plot: ogni punto è una richiesta con il suo tempo di risposta.
+
+    plt.figure(figsize=(12, 6))
+
+    for req_type in sorted(metrics.response_times_history.keys(), key=lambda e: e.name):
+        data = metrics.response_times_history[req_type]
+        if not data:
+            continue
+        times, responses = zip(*data)
+        plt.scatter(times, responses, s=10, alpha=0.6, label=req_type.name)
+
+    plt.title("Scatter Plot dei Tempi di Risposta")
+    plt.xlabel("Tempo di Simulazione (s)")
+    plt.ylabel("Tempo di Risposta (s)")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/response_time_scatter.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+# analizzare la velocità di smaltimento delle richieste nel tempo.
+def plot_cumulative_requests(metrics: Metrics):
+    served = metrics.total_requests_served
+    generated = metrics.total_requests_generated
+
+    if served == 0:
+        print("Nessuna richiesta servita da plottare.")
+        return
+
+    plt.figure(figsize=(12, 6))
+    served_timeline = [0]
+    generated_timeline = [0]
+    time_points = [0]
+
+    current_served = 0
+    current_generated = 0
+
+    # Simulazione incrementale temporale (Da usare eventi veri)
+    for ts, _ in sorted(metrics.queue_length_history):
+        current_served += 1
+        current_generated += 1
+        time_points.append(ts)
+        served_timeline.append(current_served)
+        generated_timeline.append(current_generated)
+
+    plt.plot(time_points, generated_timeline, label="Richieste Generate", color='blue')#sul grafico escono sovrapposte
+    plt.plot(time_points, served_timeline, label="Richieste Servite", color='green')
+    plt.title("Andamento Cumulativo delle Richieste nel Tempo")
+    plt.xlabel("Tempo di Simulazione (s)")
+    plt.ylabel("Numero Cumulativo")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/cumulative_requests.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+# analizzare l'andamento dei tempi di attesa nel tempo.
+def plot_wait_time_trend(metrics: Metrics):
+    plt.figure(figsize=(12, 6))
+    all_waits = []
+    for req_type in sorted(metrics.wait_times_history.keys(), key=lambda e: e.name):
+        all_waits.extend(metrics.wait_times_history[req_type])
+
+    if not all_waits:
+        print("Nessun dato per i tempi di attesa.")
+        return
+
+    all_waits.sort(key=lambda x: x[0])
+    times, waits = zip(*all_waits)
+
+    window_size = 50
+    if len(waits) >= window_size:
+        moving_avg = np.convolve(waits, np.ones(window_size) / window_size, mode='valid')
+        moving_avg_times = times[window_size - 1:]
+        plt.plot(moving_avg_times, moving_avg, label=f'Media Mobile (finestra={window_size})')
+
+    plt.title("Andamento del Tempo Medio di Attesa nel Tempo")
+    plt.xlabel("Tempo di Simulazione (s)")
+    plt.ylabel("Tempo di Attesa Medio (s)")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/wait_time_trend.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+def plot_wait_time_boxplot(metrics: Metrics):
+    req_types = sorted(metrics.wait_times_data.keys(), key=lambda e: e.name)
+    data = [metrics.wait_times_data[rt] for rt in req_types if metrics.wait_times_data[rt]]
+
+    if not data:
+        print("Nessun dato per il boxplot dei tempi di attesa.")
+        return
+
+    plt.figure(figsize=(12, 6))
+    plt.boxplot(data, patch_artist=True, notch=True, boxprops=dict(facecolor='lightgreen', color='black'))
+    plt.xticks(ticks=range(1, len(req_types) + 1), labels=[rt.name for rt in req_types], rotation=45)
+    plt.title("Boxplot dei Tempi di Attesa per Tipo di Richiesta")
+    plt.ylabel("Tempo di Attesa (s)")
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    ensure_plot_dir()
+    plt.savefig("plots/wait_time_boxplot.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
+
+# evito codice duplicato
+def ensure_plot_dir():
+    makedirs('plots', exist_ok=True)
