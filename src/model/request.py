@@ -10,13 +10,14 @@ class Request:
 
     Attributi:
         request_id (int): Identificatore univoco della richiesta.
+        req_type (RequestType, optional): Tipo di richiesta (es. checkout, ricerca).
+                                          Può essere utile per analisi più dettagliate.
         arrival_time (float): Tempo di simulazione in cui la richiesta arriva.
         priority (Priority): Classe di priorità della richiesta (es. ALTA, MEDIA, BASSA).
                              Determina da quale coda verrà servita.
         service_time (float): Tempo necessario a un Pod per processare questa specifica
                               richiesta. Dipende dal tipo/priorità.
-        req_type (RequestType, optional): Tipo di richiesta (es. checkout, ricerca).
-                                          Può essere utile per analisi più dettagliate.
+
 
     """
     request_id: int
