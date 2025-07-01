@@ -33,7 +33,7 @@ class RequestType(Enum):
     ADD_TO_CART = 5
 
 # --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
-TOTAL_ARRIVAL_RATE = 15     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
+TOTAL_ARRIVAL_RATE = 5     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
 
 TRAFFIC_PROFILE = {
     RequestType.LOGIN: 0.15,
@@ -85,23 +85,23 @@ class Priority(IntEnum):
      (ogni classe si comporta come il numero che la identifica)
     Un valore più basso indica una priorità più alta.
     """
-    ALTA = 0
-    MEDIA = 1
-    BASSA = 2
+    HIGH = 0
+    MEDIUM = 1
+    LOW = 2
 
 
 SERVICE_CLASSES_CONFIG = {
-    Priority.ALTA: {
+    Priority.HIGH: {
         "traffic_share": 0.15,
         "avg_service_time_ms": 200,
         "service_time_dist": "Exponential" # Esempio di parametro aggiuntivo
     },
-    Priority.MEDIA: {
+    Priority.MEDIUM: {
         "traffic_share": 0.35,
         "avg_service_time_ms": 100,
         "service_time_dist": "Exponential"
     },
-    Priority.BASSA: {
+    Priority.LOW: {
         "traffic_share": 0.50,
         "avg_service_time_ms": 50,
         "service_time_dist": "TruncatedGaussian" # Potresti anche variare la distribuzione
