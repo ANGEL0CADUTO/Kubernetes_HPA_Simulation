@@ -1,5 +1,6 @@
 import math
 from enum import Enum
+from enum import IntEnum
 
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
 SIMULATION_TIME = 1000      # Tempo totale di simulazione (in secondi)
@@ -77,10 +78,11 @@ SERVICE_TIME_CONFIG = {
 PRIORITY_SCHEDULING_ENABLED = True  # O False, per eseguire la versione baseline
 
 
-class Priority(Enum):
+class Priority(IntEnum):
     """
-    Enum per le classi di priorità.
-    L'ordine è importante se vuoi usarlo per confronti diretti (es. in un heap).
+    IntEnum per le classi di priorità.
+    IntEnum è migliore di Enum in questo caso perché permette di ordinare i valori in maniera semplice
+     (ogni classe si comporta come il numero che la identifica)
     Un valore più basso indica una priorità più alta.
     """
     ALTA = 0
