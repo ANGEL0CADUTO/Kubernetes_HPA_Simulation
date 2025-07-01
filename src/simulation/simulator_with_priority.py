@@ -57,6 +57,10 @@ class SimulatorWithPriority:
             yield self.env.timeout(time_to_next)
 
             req_id_counter += 1
+            req_types = list(self.config.TRAFFIC_PROFILE.keys())
+            req_probs = list(self.config.TRAFFIC_PROFILE.values())
+
+            chosen_type = self.rng.choice(req_types, p=req_probs)
             chosen_priority = random.choices(service_classes, weights=traffic_shares, k=1)[0]
             class_config = self.config.SERVICE_CLASSES_CONFIG[chosen_priority]
             avg_service_time = class_config["avg_service_time_ms"] / 1000.0
@@ -64,12 +68,14 @@ class SimulatorWithPriority:
 
             new_request = PriorityRequest(
                 request_id=req_id_counter,
+                req_type=chosen_type,
                 arrival_time=self.env.now,
                 priority=chosen_priority,
                 service_time=service_time
             )
-            self.metrics.record_request_generation()
-            print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} (Priorità: {new_request.priority.name}) generata, la invio al distributore.")
+            self.metrics.record_request_generation(self.env.now)
+
+            print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} (Priorità: {new_request.priority.name}) generata.")
 
             # Invece di una coda centrale, chiamiamo un processo distributore
             self.env.process(self.request_distributor(new_request))

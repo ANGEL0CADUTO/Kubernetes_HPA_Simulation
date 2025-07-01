@@ -34,9 +34,9 @@ class MetricsWithPriority:
         self.response_times_at_completion_by_priority = defaultdict(list)
         # -----------------------------------------------
 
-    def record_request_generation(self):
+    def record_request_generation(self, timestamp: float):
         """Registra il timestamp di quando una richiesta è generata."""
-        self.request_generation_timestamps.append(self.config.env.now) # Assumendo che config abbia l'env
+        self.request_generation_timestamps.append(timestamp)
 
     def record_system_metrics(self, timestamp, pod_count, queue_len):
         """Registra lo stato del sistema a intervalli regolari."""
