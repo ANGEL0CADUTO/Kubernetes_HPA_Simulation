@@ -71,3 +71,36 @@ SERVICE_TIME_CONFIG = {
         "params": get_lognormal_params(mean=0.08, stdev=0.04)
     }
 }
+
+# --- SOLUZIONE MIGLIORATIVA: ABSTRACT PRIORITY SCHEDULING ---
+PRIORITY_SCHEDULING_ENABLED = True  # O False, per eseguire la versione baseline
+
+
+class Priority(Enum):
+    """
+    Enum per le classi di priorità.
+    L'ordine è importante se vuoi usarlo per confronti diretti (es. in un heap).
+    Un valore più basso indica una priorità più alta.
+    """
+    ALTA = 0
+    MEDIA = 1
+    BASSA = 2
+
+
+SERVICE_CLASSES_CONFIG = {
+    Priority.ALTA: {
+        "traffic_share": 0.15,
+        "avg_service_time_ms": 200,
+        "service_time_dist": "Exponential" # Esempio di parametro aggiuntivo
+    },
+    Priority.MEDIA: {
+        "traffic_share": 0.35,
+        "avg_service_time_ms": 100,
+        "service_time_dist": "Exponential"
+    },
+    Priority.BASSA: {
+        "traffic_share": 0.50,
+        "avg_service_time_ms": 50,
+        "service_time_dist": "TruncatedGaussian" # Potresti anche variare la distribuzione
+    }
+}
