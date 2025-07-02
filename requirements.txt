@@ -1,0 +1,9 @@
+# requirements.txt
+
+numpy
+simpy
+matplotlib
+PyQt5
+xlsxwriter
+pandas
+seaborn
