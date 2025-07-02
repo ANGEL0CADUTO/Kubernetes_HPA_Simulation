@@ -93,23 +93,13 @@ class Priority(IntEnum):
     MEDIUM = 1
     LOW = 2
 
-
-SERVICE_CLASSES_CONFIG = {
-    Priority.HIGH: {
-        "traffic_share": 0.15,
-        "avg_service_time_ms": 200,
-        "service_time_dist": "Exponential" # Esempio di parametro aggiuntivo
-    },
-    Priority.MEDIUM: {
-        "traffic_share": 0.35,
-        "avg_service_time_ms": 100,
-        "service_time_dist": "Exponential"
-    },
-    Priority.LOW: {
-        "traffic_share": 0.50,
-        "avg_service_time_ms": 50,
-        "service_time_dist": "TruncatedGaussian" # Potresti anche variare la distribuzione
-    }
+# --- MODIFICA CHIAVE: Mappatura fissa da Tipo di Richiesta a Priorità ---
+REQUEST_TYPE_TO_PRIORITY = {
+    RequestType.LOGIN:       Priority.HIGH,
+    RequestType.CHECKOUT:    Priority.HIGH,
+    RequestType.ADD_TO_CART: Priority.MEDIUM,
+    RequestType.NAVIGATION:  Priority.MEDIUM,
+    RequestType.ANALYTICS:   Priority.LOW
 }
 
 #todo sistemare le percentuali perché non corrispondono tra high/medium/low e i vari traffic share
