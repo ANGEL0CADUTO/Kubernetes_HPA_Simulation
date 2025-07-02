@@ -111,3 +111,12 @@ SERVICE_CLASSES_CONFIG = {
         "service_time_dist": "TruncatedGaussian" # Potresti anche variare la distribuzione
     }
 }
+
+#todo sistemare le percentuali perché non corrispondono tra high/medium/low e i vari traffic share
+TRAFFIC_PRIORITY = {
+    RequestType.LOGIN: Priority.HIGH,
+    RequestType.NAVIGATION: Priority.LOW,
+    RequestType.CHECKOUT: Priority.HIGH,
+    RequestType.ANALYTICS: Priority.MEDIUM,
+    RequestType.ADD_TO_CART: Priority.MEDIUM
+}

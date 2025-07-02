@@ -62,8 +62,7 @@ class SimulatorWithPriority:
 
             chosen_type = self.rng.choice(req_types, p=req_probs)
 
-            #todo fix la priorità non va generata ma dedotta dal tipo di richiesta. accordarsi sulle richieste perché non mi ricordo adesso
-            chosen_priority = random.choices(ordered_priorities, weights=traffic_shares, k=1)[0]
+            chosen_priority = self.config.TRAFFIC_PRIORITY[chosen_type]
 
             class_config = self.config.SERVICE_CLASSES_CONFIG[chosen_priority]
             avg_service_time = class_config["avg_service_time_ms"] / 1000.0
@@ -78,7 +77,7 @@ class SimulatorWithPriority:
             )
             self.metrics.record_request_generation(self.env.now)
 
-            print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} (Priorità: {new_request.priority.name}) generata.")
+            print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} (Tipo: {new_request.req_type}, Priorità: {new_request.priority.name}) generata.")
 
             # --- PLACE NEW REQUEST IN CORRECT PRIORITY QUEUE ---
             if new_request.priority == Priority.HIGH:
@@ -108,23 +107,36 @@ class SimulatorWithPriority:
                     request_to_process = yield self.low_priority_queue.get()
 
                 # 2. Se tutte le code sono vuote si mette in attesa, appena arriva una richiesta "si sveglia"
-                if request_to_process is None:
+                else:
                     is_idle = True
                     self.idle_pod_ids.append(pod_id)
 
-                    # `Spiegazione: any_of` qui è perfetto per l'attesa. Quando il pod si sveglia,
-                    # il loop `while` ripartirà e la catena di if/elif sopra garantirà
-                    # che la richiesta a priorità più alta venga servita.
-                    result = yield self.env.any_of([
+                    # Attendi che una QUALSIASI richiesta arrivi per "svegliarti"
+                    # Usiamo any_of solo come trigger, non per prendere l'item.
+                    # Nota: Simpy Store.get() è un evento.
+                    wakeup_events = [
                         self.high_priority_queue.get(),
                         self.medium_priority_queue.get(),
                         self.low_priority_queue.get()
-                    ])
-                    request_to_process = list(result.values())[0]
+                    ]
+                    result = yield self.env.any_of(wakeup_events)
 
-                # Prima del processamento indichiamo che il pod non è più idle
-                if is_idle:
+                    # Abbiamo ottenuto una richiesta, la rimettiamo subito nella sua coda
+                    # in modo che la logica di selezione all'inizio del loop possa funzionare.
+                    request_that_woke_us = list(result.values())[0]
+
+                    if request_that_woke_us.priority == Priority.HIGH:
+                        self.high_priority_queue.put(request_that_woke_us)
+                    elif request_that_woke_us.priority == Priority.MEDIUM:
+                        self.medium_priority_queue.put(request_that_woke_us)
+                    else:   # Priority.LOW
+                        self.low_priority_queue.put(request_that_woke_us)
+
+                    # Rimuovi l'ID del pod dalla lista degli idle
                     self.idle_pod_ids.remove(pod_id)
+
+                    # Torna all'inizio del loop per rieseguire la scansione delle priorità
+                    continue
 
                 # 3. Processamento della richiesta
                 arrival_in_service = self.env.now
@@ -170,7 +182,6 @@ class SimulatorWithPriority:
         """
         Calcola il numero esatto di Pod che stanno attualmente processando una richiesta.
         """
-
         return len(self.active_pods) - len(self.idle_pod_ids)
 
     def scale_to(self, desired_replicas):
@@ -213,4 +224,4 @@ class SimulatorWithPriority:
         if self.config.HPA_ENABLED:
             HPA(self.env, self)
         self.env.run(until=self.config.SIMULATION_TIME)
-        print("--- Simulazione Terminata ---")
+        print("--- Simulazione con priorità Terminata ---")
