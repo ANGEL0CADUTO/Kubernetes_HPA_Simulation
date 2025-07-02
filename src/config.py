@@ -78,6 +78,15 @@ SERVICE_TIME_CONFIG = {
     }
 }
 
+# --- TIMEOUT IN SECONDI ---
+REQUEST_TIMEOUTS = {
+    RequestType.LOGIN: 5.0,
+    RequestType.NAVIGATION: 2.5,
+    RequestType.CHECKOUT: 10.0,  # L'utente è più paziente durante il checkout
+    RequestType.ANALYTICS: 3.0,   # Richiesta interna, può essere scartata
+    RequestType.ADD_TO_CART: 4.0
+}
+
 # --- SOLUZIONE MIGLIORATIVA: ABSTRACT PRIORITY SCHEDULING ---
 PRIORITY_SCHEDULING_ENABLED = True  # O False, per eseguire la versione baseline
 
@@ -93,20 +102,12 @@ class Priority(IntEnum):
     MEDIUM = 1
     LOW = 2
 
-# --- MODIFICA CHIAVE: Mappatura fissa da Tipo di Richiesta a Priorità ---
+
+# --- Mappatura fissa da Tipo di Richiesta a Priorità ---
 REQUEST_TYPE_TO_PRIORITY = {
     RequestType.LOGIN:       Priority.HIGH,
     RequestType.CHECKOUT:    Priority.HIGH,
     RequestType.ADD_TO_CART: Priority.MEDIUM,
     RequestType.NAVIGATION:  Priority.MEDIUM,
     RequestType.ANALYTICS:   Priority.LOW
-}
-
-#todo sistemare le percentuali perché non corrispondono tra high/medium/low e i vari traffic share
-TRAFFIC_PRIORITY = {
-    RequestType.LOGIN: Priority.HIGH,
-    RequestType.NAVIGATION: Priority.LOW,
-    RequestType.CHECKOUT: Priority.HIGH,
-    RequestType.ANALYTICS: Priority.MEDIUM,
-    RequestType.ADD_TO_CART: Priority.MEDIUM
 }

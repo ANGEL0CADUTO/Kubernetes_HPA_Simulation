@@ -23,8 +23,17 @@ class Metrics:
         self.total_requests_generated = 0
         self.total_requests_served = 0
 
-    def record_request_generation(self):
+        # Timeout
+        self.total_timeouts = 0
+        # Un dizionario per contare quante richieste di ogni tipo sono state generate
+        self.requests_generated_data = defaultdict(int)
+        # Un dizionario per contare quante richieste di ogni tipo sono andate in timeout
+        self.requests_timed_out_data = defaultdict(int)
+
+    def record_request_generation(self, req_type: RequestType):
         self.total_requests_generated += 1
+        """Registra la generazione di una richiesta, catalogandola per tipo."""
+        self.requests_generated_data[req_type] += 1
 
     def record_request_metrics(self, timestamp, req_type, response_time, wait_time):
         """Registra le metriche per una singola richiesta completata."""
@@ -43,6 +52,10 @@ class Metrics:
         self.pod_count_history.append((timestamp, pod_count))
         self.queue_length_history.append((timestamp, queue_length))
 
+    def record_timeout(self, req_type: RequestType):
+        """Registra una richiesta che è andata in timeout."""
+        self.requests_timed_out_data[req_type] += 1
+
     def print_summary(self):
         """Stampa un riassunto delle metriche a fine simulazione."""
         print("\n--- Riepilogo Metriche di Simulazione ---")
@@ -60,3 +73,15 @@ class Metrics:
             if self.wait_times_data[req_type]:
                 avg_wait_time = np.mean(self.wait_times_data[req_type])
                 print(f"- {req_type.name:12}: {avg_wait_time:.4f}")
+
+        print("\n--- Analisi dei Timeout per Tipo di Richiesta ---")
+        # Itera sui tipi di richiesta in ordine alfabetico per un output consistente
+        for req_type in sorted(self.requests_generated_data.keys(), key=lambda e: e.name):
+            generated_count = self.requests_generated_data[req_type]
+            timed_out_count = self.requests_timed_out_data[req_type]
+
+            if generated_count > 0:
+                p_loss_type = timed_out_count / generated_count
+                print(f"- {req_type.name:12}: {timed_out_count} persi su {generated_count} -> P_loss = {p_loss_type:.2%}")
+            else:
+                print(f"- {req_type.name:12}: 0 generati")

@@ -45,9 +45,9 @@ def main():
     # --- ESECUZIONE DELLA SIMULAZIONE MIGLIORATA (PRIORITÀ PER WORKER) ---
     print("\n--- SCENARIO MIGLIORATO (ABSTRACT PRIORITY) ---")
 
-    #rng_prio = np.random.default_rng(seed=numpy_seed) #da controllare gestione del RNG!!! capire qual è il modo migliore
+    rng_prio = np.random.default_rng(seed=numpy_seed)   #stesso seed di baseline
     metrics_prio = MetricsWithPriority(config)
-    simulator_prio = SimulatorWithPriority(config, metrics_prio, rng)
+    simulator_prio = SimulatorWithPriority(config, metrics_prio, rng_prio)
     simulator_prio.run()
 
     metrics_prio.print_summary()
@@ -85,4 +85,3 @@ def generate_all_plots(metrics: Metrics, config):
 if __name__ == "__main__":
     main()
 
-    # elisa è stata qui:)

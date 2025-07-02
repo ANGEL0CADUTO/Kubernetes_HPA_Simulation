@@ -11,17 +11,16 @@ class Request:
     Attributi:
         request_id (int): Identificatore univoco della richiesta.
         req_type (RequestType, optional): Tipo di richiesta (es. checkout, ricerca).
-                                          Può essere utile per analisi più dettagliate.
         arrival_time (float): Tempo di simulazione in cui la richiesta arriva.
-
+        timeout (float): Tempo dopo il quale la richiesta viene automaticamente scartata se non servita
     """
     request_id: int
     req_type: RequestType
     arrival_time: float
+    timeout: float
 
 
-
-#--- CLASSE DERIVATA (PER IL MIGLIORAMENTO) ---
+# --- CLASSE DERIVATA (PER IL MIGLIORAMENTO) ---
 # Usiamo l'ereditarietà. PriorityRequest ha tutti i campi di Request più i suoi campi specifici.
 @dataclass
 class PriorityRequest(Request):
