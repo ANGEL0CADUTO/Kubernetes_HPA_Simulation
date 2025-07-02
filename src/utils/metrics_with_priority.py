@@ -23,10 +23,11 @@ class MetricsWithPriority:
         self.request_generation_timestamps = []
         self.queue_lengths_per_priority = defaultdict(list)
 
-        # --- MODIFICA CHIAVE: Metriche per Priorità ---
+        # --- MODIFICA CHIAVE: Metriche per Priorità e TIMEOUT---
         # Usiamo defaultdict per creare automaticamente una lista per una nuova priorità
         # quando vi accediamo per la prima volta. La chiave sarà l'enum Priority.
         self.requests_completed_by_priority = defaultdict(int)
+        self.requests_generated_by_priority = defaultdict(int)
         self.requests_timed_out_by_priority = defaultdict(int)
 
         self.response_times_by_priority = defaultdict(list)
@@ -42,10 +43,10 @@ class MetricsWithPriority:
         self.wait_times_by_req_type = defaultdict(list)
         # -----------------------------------------------------------------
 
-
-    def record_request_generation(self, timestamp: float):
+    def record_request_generation(self, timestamp: float, priority: Priority):
         """Registra il timestamp di quando una richiesta è generata."""
         self.request_generation_timestamps.append(timestamp)
+        self.requests_generated_by_priority[priority] += 1
 
     def record_system_metrics(self, timestamp, pod_count, queue_len, queue_len_per_prio: dict):
         """Registra lo stato del sistema a intervalli regolari."""
@@ -79,7 +80,7 @@ class MetricsWithPriority:
         self.wait_times_by_req_type[req_type].append(wait_time)
         # ------------------------------------------------------------------
 
-    def record_timeout(self, request: PriorityRequest, timestamp: float):
+    def record_timeout(self, request: PriorityRequest):
         """Registra una richiesta che è andata in timeout (se implementato)."""
         self.requests_timed_out_by_priority[request.priority] += 1
 
@@ -111,6 +112,9 @@ class MetricsWithPriority:
         print("\n--- Dettaglio per Classe di Priorità ---")
         for prio in sorted(Priority):
             num_completed = self.requests_completed_by_priority[prio]
+            generated_count = self.requests_generated_by_priority[prio]
+            num_timeouts = self.requests_timed_out_by_priority[prio]
+
             if num_completed == 0:
                 continue
 
@@ -124,6 +128,11 @@ class MetricsWithPriority:
             print(f"  - Tempo di Risposta Medio: {avg_response_time:.4f}s")
             print(f"  - Tempo di Attesa Medio:   {avg_wait_time:.4f}s")
             print(f"  - Tempo di Risposta Massimo: {max_response_time:.4f}s")
+
+            # --- P_LOSS ---
+            if generated_count > 0:
+                p_loss_prio = num_timeouts / generated_count
+                print(f"  - P_loss Specifica:   {p_loss_prio:.2%}")
 
         # --- NUOVA SEZIONE DI STAMPA PER TIPO DI RICHIESTA ---
         print("\n\n--- Dettaglio per Tipo di Richiesta (per Confronto Diretto con Baseline) ---")

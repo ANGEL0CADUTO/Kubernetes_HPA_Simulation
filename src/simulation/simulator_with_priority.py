@@ -48,11 +48,13 @@ class SimulatorWithPriority:
             chosen_type = self.rng.choice(req_types, p=req_probs)
             assigned_priority = self.config.REQUEST_TYPE_TO_PRIORITY[chosen_type]
             service_time = self.service.get_service_time(chosen_type)
+            type_timeout = self.config.REQUEST_TIMEOUTS[chosen_type]
+
             new_request = PriorityRequest(
                 request_id=req_id_counter, req_type=chosen_type,
                 arrival_time=self.env.now, priority=assigned_priority,
-                service_time=service_time)
-            self.metrics.record_request_generation(self.env.now)
+                service_time=service_time, timeout = type_timeout)
+            self.metrics.record_request_generation(self.env.now, assigned_priority)
             print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name} -> Priorità: {new_request.priority.name}) generata.")
             yield self.priority_queues[new_request.priority].put(new_request)
 
@@ -122,7 +124,7 @@ class SimulatorWithPriority:
         return max(0, num_busy_pods)
 
     def scale_to(self, desired_replicas):
-        # Questa funzione è già corretta e non necessita modifiche.
+
         current_replicas = len(self.active_pods)
         if desired_replicas > current_replicas:
             num_to_add = desired_replicas - current_replicas
@@ -151,4 +153,4 @@ class SimulatorWithPriority:
         if self.config.HPA_ENABLED:
             HPA(self.env, self)
         self.env.run(until=self.config.SIMULATION_TIME)
-        print("--- Simulazione Terminata ---")
+        print("--- Simulazione con priorità Terminata ---")

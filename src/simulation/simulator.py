@@ -41,13 +41,16 @@ class Simulator:
             yield self.env.timeout(time_to_next)
 
             chosen_type = self.rng.choice(req_types, p=req_probs)
+            type_timeout = self.config.REQUEST_TIMEOUTS[chosen_type]
+
             req_id_counter += 1
             new_request = Request(
                 request_id=req_id_counter,
                 req_type=chosen_type,
-                arrival_time=self.env.now
+                arrival_time=self.env.now,
+                timeout=type_timeout
             )
-            self.metrics.record_request_generation()
+            self.metrics.record_request_generation(chosen_type)
 
             print(
                 f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name}) generata.")
