@@ -7,3 +7,4 @@ PyQt5
 xlsxwriter
 pandas
 seaborn
+openpyxl
