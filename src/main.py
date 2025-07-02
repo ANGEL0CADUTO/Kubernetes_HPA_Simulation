@@ -51,6 +51,7 @@ def main():
     simulator_prio.run()
 
     metrics_prio.print_summary()
+    print(".............................................")
     metrics.print_summary()
     #export_summary_to_excel(metrics_prio)
     #export_summary_to_csv(metrics_prio)

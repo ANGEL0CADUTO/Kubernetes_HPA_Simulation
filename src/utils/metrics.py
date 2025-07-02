@@ -58,7 +58,7 @@ class Metrics:
 
     def print_summary(self):
         """Stampa un riassunto delle metriche a fine simulazione."""
-        print("\n--- Riepilogo Metriche di Simulazione ---")
+        print("\n--- Riepilogo Metriche di Performance (Simulazione Baseline) ---")
         print(f"Numero totale di richieste generate: {self.total_requests_generated}")
         print(f"Numero totale di richieste servite: {self.total_requests_served}")
 
