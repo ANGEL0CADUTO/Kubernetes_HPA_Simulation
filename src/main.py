@@ -1,5 +1,6 @@
 import numpy as np
 from src import config
+from src.analysis.dati_report import export_summary_to_excel, export_summary_to_csv, save_run_data
 from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
@@ -44,6 +45,11 @@ def main():
     simulator_prio.run()
 
     metrics_prio.print_summary()
+    metrics.print_summary()
+    #export_summary_to_excel(metrics_prio)
+    #export_summary_to_csv(metrics_prio)
+
+    #generate_all_plots(metrics_prio, config)
 
     print("\n--- Esecuzione migliorativa Terminata ---")
 
