@@ -1,16 +1,21 @@
 import numpy as np
 from src import config
-from src.analysis.dati_report import export_summary_to_excel, export_summary_to_csv, save_run_data
+
 from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
-# ----- MODIFICA QUI -----
-from src.analysis.plotter import plot_pod_history, plot_queue_history, plot_response_time_trend, \
-    plot_response_time_histogram, plot_request_heatmap, plot_response_time_scatter, plot_response_time_boxplot, \
-    plot_cumulative_requests, plot_wait_time_trend, plot_wait_time_boxplot
+# ----- MODIFICA QUI ----
+from analysis.data_report import *
+from analysis.plotter import CSVPlotter
+
 # -------------------------
 from src.simulation.simulator import Simulator
 from src.utils.metrics_with_priority import MetricsWithPriority
+
+csv1 = "output/non_prioritized_summary.csv",
+csv2 = "output/prioritized_summary.csv",
+label1 = "Senza Priorità",
+label2 = "Con Priorità"
 
 
 def main():
@@ -27,18 +32,7 @@ def main():
 
     simulator = Simulator(config_module=config, metrics=metrics, rng=rng)
     simulator.run()
-
-    save_run_data(metrics)  # Salva i dati di esecuzione in CSV ed Excel
-
-    #metrics.print_summary()
-    #export_summary_to_excel(metrics)
-    #export_summary_to_csv(metrics)
-
-
-    # --- MODIFICA QUI ---
-    # Genera i grafici di andamento temporale
-    #generate_all_plots(metrics, config)
-    # --------------------
+    metrics.print_summary()
 
     print("\n--- Esecuzione baseline Terminata ---")
 
@@ -53,35 +47,28 @@ def main():
     metrics_prio.print_summary()
     print(".............................................")
     metrics.print_summary()
-    #export_summary_to_excel(metrics_prio)
-    #export_summary_to_csv(metrics_prio)
-
-    #generate_all_plots(metrics_prio, config)
 
     print("\n--- Esecuzione migliorativa Terminata ---")
 
+    # Dopo la simulazione:
+    # --- ANALISI DEI RISULTATI ---
+    export_summary(metrics_prio, output_dir="output", label="con_priorita", by_priority=True)
+    export_summary(metrics, output_dir="output", label="senza_priorita", by_priority=False)
 
+    plotter = CSVPlotter(
+        file1="output/senza_priorita_metrics.xlsx",
+        label1="Senza Priorità",
+        file2="output/con_priorita_metrics.xlsx",
+        label2="Con Priorità"
+    )
 
+    plotter.plot_avg_response_times(by='type')
+    plotter.plot_avg_response_times(by='priority')
+    plotter.plot_comparison_summary()
+    plotter.plot_system_evolution()#ho fatto solo quello senza priorità
+    plotter.plot_response_histogram()
+    plotter.plot_wait_histogram()
 
-def generate_all_plots(metrics: Metrics, config):
-    plot_pod_history(metrics, config)
-    plot_queue_history(metrics)
-    plot_response_time_trend(metrics)
-    plot_response_time_histogram(metrics)
-    plot_response_time_boxplot(metrics)
-    plot_response_time_scatter(metrics)
-    plot_request_heatmap(metrics)
-    plot_cumulative_requests(metrics)
-    plot_wait_time_trend(metrics)
-    plot_wait_time_boxplot(metrics)
-    # plot_arrival_vs_service_rate(metrics) può servire?
-    # i box_plot escono parecchio schiacciati lasciare?
-
-
-"""        Min       Q1     Median     Q3       Max
-        |---------|=======|=======|---------|
-                |       |       |
-                baffo    box    baffo              """
 
 if __name__ == "__main__":
     main()
