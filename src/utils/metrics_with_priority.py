@@ -35,6 +35,7 @@ class MetricsWithPriority:
 
         # Per i grafici temporali, potremmo volerli separati
         self.completion_timestamps_by_priority = defaultdict(list)
+        self.completion_timestamps_by_req_type = defaultdict(list)
         self.response_times_at_completion_by_priority = defaultdict(list)
         # -----------------------------------------------
 
@@ -73,11 +74,13 @@ class MetricsWithPriority:
         self.response_times_by_priority[prio].append(response_time)
         self.wait_times_by_priority[prio].append(wait_time)
         self.completion_timestamps_by_priority[prio].append(completion_time)
+        self.completion_timestamps_by_req_type[req_type].append(completion_time)
         self.response_times_at_completion_by_priority[prio].append(response_time)
 
         # --- AGGIUNTA: Registra gli stessi dati anche per Tipo di Richiesta ---
         self.response_times_by_req_type[req_type].append(response_time)
         self.wait_times_by_req_type[req_type].append(wait_time)
+
         # ------------------------------------------------------------------
 
     def record_timeout(self, request: PriorityRequest):
