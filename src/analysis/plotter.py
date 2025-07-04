@@ -178,7 +178,7 @@ class Plotter:
         """
         Genera ISTOGRAMMI dei tempi di risposta per ogni tipo di richiesta.
         """
-        no_priority_req_types = list(self.metrics.response_time_data.keys())
+        no_priority_req_types = list(self.metrics.response_times_data.keys())
         priority_req_types= list(self.metrics_prio.response_times_by_req_type.keys())
         all_req_types=[]
         for req_type in no_priority_req_types:
@@ -188,11 +188,70 @@ class Plotter:
             if req_type not in all_req_types:
                 all_req_types.append(req_type)
         all_req_types=sorted(all_req_types, key=lambda e: e.name)
+        if not all_req_types:
+            print("Nessun dato per l'istogramma comparativo dei tempi di risposta.")
+            return
+        num_types = len(all_req_types)
+        cols= min(4, num_types)
+        rows=(num_types+ cols-1) // cols
 
-        plt.suptitle("Distribuzione (Istogrammi) dei Tempi di Risposta", fontsize=16)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        fig, axes = plt.subplots(rows, cols, figsize=(10*cols, 6*rows))
+        #Gestisco il caso di un solo subplot
+        if num_types==1:
+            axes= [axes]
+        elif rows==1:
+            axes= axes if isinstance(axes,np.ndarray) else [axes]
+        else:
+            axes=axes.flatten()
+        for i, req_type in enumerate(all_req_types):
+            ax = axes[i]
+
+            #Dati senza priorità
+            no_priority_data = self.metrics.response_times_data.get(req_type, [])
+            priority_data=self.metrics_prio.response_times_by_req_type.get(req_type, [])
+            #Determina i bin comuni per un confronto equo
+            if no_priority_data and priority_data:
+                all_data= no_priority_data + priority_data
+                bins=np.linspace(min(all_data), max(all_data), 30)
+                ax.hist(no_priority_data, bins=bins, alpha=0.6, label='Senza priorità', color="skyblue", edgecolor='black')
+                ax.hist(priority_data, bins=bins, alpha=0.6, label='Con priorità',color='lightcoral',edgecolor='black')
+                #Statistiche comparative
+                mean_no_priority = np.mean(no_priority_data)
+                mean_priority = np.mean(priority_data)
+                ax.axvline(mean_no_priority, color='blue', linestyle='--',linewidth=2,label=f'Media No priority: {mean_no_priority}s')
+                ax.axvline(mean_priority,color='red', linestyle='--',linewidth=2,label=f'Media Priority: {mean_priority}s')
+                #Calcola il miglioramento percentuale
+                improvement=((mean_no_priority-mean_priority)/mean_no_priority)*100
+                ax.text(0.02, 0.98, f'Miglioramento: {improvement:.1f}%',
+                        transform=ax.transAxes, va='top', ha='left', fontsize=12, fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgreen', alpha=0.8))
+            elif no_priority_data:
+                ax.hist(no_priority_data,bins=30,alpha=0.6,label='Senza priorità',color='skyblue',edgecolor='black')
+            elif priority_data:
+                ax.hist(priority_data,bins=30,alpha=0.6,label='Con priorità',color='lightcoral',edgecolor='black')
+            else:
+                ax.test(0.5,0.5,'Nessun dato disponibile',transform=ax.transAxes,ha='center',va='center')
+
+            ax.set_title(f"{req_type.name}",fontsize=14,fontweight='bold')
+            ax.set_xlabel("Tempo di Risposta (s)",fontsize=12)
+            ax.set_ylabel("Frequenza",fontsize=12)
+            # Posiziona la legenda in modo più elegante
+            legend = ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+            legend.get_frame().set_facecolor('white')
+            legend.get_frame().set_edgecolor('gray')
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.tick_params(axis='both', which='major', labelsize=10)
+
+        #Nacondo i subplot extra se presenti
+        for j in range(i+1,len(axes)):
+            axes[j].set_visible(False)
+
+
+
+        plt.suptitle("Confronto sovrapposto tempi di risposta:senza priorità vs priorità", fontsize=18,fontweight='bold',y=0.98)
+        plt.tight_layout(rect=[0, 0.02, 1, 0.96])
         self.ensure_plot_dir()
-        plt.savefig('plots/response_time_histogram.png', dpi=300, bbox_inches='tight')
+        plt.savefig('plots/response_time_overlay_comparison_histogram.png', dpi=300, bbox_inches='tight')
         plt.show()
 
 
