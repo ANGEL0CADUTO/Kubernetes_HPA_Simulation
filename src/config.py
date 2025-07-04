@@ -85,11 +85,11 @@ SERVICE_TIME_CONFIG = {
 
 # --- TIMEOUT IN SECONDI ---
 REQUEST_TIMEOUTS = {
-    RequestType.LOGIN: 5.0,
-    RequestType.NAVIGATION: 2.5,
-    RequestType.CHECKOUT: 10.0,  # L'utente è più paziente durante il checkout
-    RequestType.ANALYTICS: 3.0,   # Richiesta interna, può essere scartata
-    RequestType.ADD_TO_CART: 4.0
+    RequestType.LOGIN: 1.0,
+    RequestType.NAVIGATION: 1.0,
+    RequestType.ADD_TO_CART: 3.0,
+    RequestType.CHECKOUT: 5.0,  # L'utente è più paziente durante il checkout
+    RequestType.ANALYTICS: 5.0   # Richiesta interna, può essere scartata
 }
 
 # --- SOLUZIONE MIGLIORATIVA: ABSTRACT PRIORITY SCHEDULING ---
