@@ -1,12 +1,13 @@
 import numpy as np
 from src import config
 
+
 from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
 # ----- MODIFICA QUI ----
 from analysis.data_report import *
-from analysis.plotter import CSVPlotter
+from analysis.plotter import Plotter
 
 # -------------------------
 from src.simulation.simulator import Simulator
@@ -54,20 +55,10 @@ def main():
     # --- ANALISI DEI RISULTATI ---
     export_summary(metrics_prio, output_dir="output", label="con_priorita", by_priority=True)
     export_summary(metrics, output_dir="output", label="senza_priorita", by_priority=False)
+    plotter = Plotter(metrics,metrics_prio,config)
+    plotter.generate_comprehensive_report()
 
-    plotter = CSVPlotter(
-        file1="output/senza_priorita_metrics.xlsx",
-        label1="Senza Priorità",
-        file2="output/con_priorita_metrics.xlsx",
-        label2="Con Priorità"
-    )
 
-    plotter.plot_avg_response_times(by='type')
-    plotter.plot_avg_response_times(by='priority')
-    plotter.plot_comparison_summary()
-    plotter.plot_system_evolution()#ho fatto solo quello senza priorità
-    plotter.plot_response_histogram()
-    plotter.plot_wait_histogram()
 
 
 if __name__ == "__main__":
