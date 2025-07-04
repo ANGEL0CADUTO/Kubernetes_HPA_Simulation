@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import alpha
 
+from src.utils import metrics
 from src.utils.metrics import Metrics
 import seaborn as sns
 import pandas as pd
@@ -177,27 +178,16 @@ class Plotter:
         """
         Genera ISTOGRAMMI dei tempi di risposta per ogni tipo di richiesta.
         """
-        req_types = sorted(list(self.metrics.response_times_data.keys()), key=lambda e: e.name)
-        if not req_types:
-            print("Nessun dato per l'istogramma dei tempi di risposta.")
-            return
-
-        num_types = len(req_types)
-        plt.figure(figsize=(15, 8))
-
-        cols = (num_types + 1) // 2
-        rows = 2
-
-        for i, req_type in enumerate(req_types):
-            if self.metrics.response_times_data[req_type]:
-                ax = plt.subplot(rows, cols, i + 1)
-                # Usa i dati da response_times_data per l'istogramma
-                ax.hist(self.metrics.response_times_data[req_type], bins=30, edgecolor='black', alpha=0.7)
-                ax.set_title(f"Istogramma Tempi Risposta: {req_type.name}")
-                ax.set_xlabel("Tempo (s)")
-                if i % cols == 0:
-                    ax.set_ylabel("Frequenza")
-                ax.grid(True, linestyle='--', alpha=0.5)
+        no_priority_req_types = list(self.metrics.response_time_data.keys())
+        priority_req_types= list(self.metrics_prio.response_times_by_req_type.keys())
+        all_req_types=[]
+        for req_type in no_priority_req_types:
+            if req_type not in all_req_types:
+                all_req_types.append(req_type)
+        for req_type in priority_req_types:
+            if req_type not in all_req_types:
+                all_req_types.append(req_type)
+        all_req_types=sorted(all_req_types, key=lambda e: e.name)
 
         plt.suptitle("Distribuzione (Istogrammi) dei Tempi di Risposta", fontsize=16)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -284,6 +274,7 @@ class Plotter:
         self.plot_pod_history()
         self.plot_queue_history()
         self.plot_wait_time_trend()
+        self.plot_response_time_trend()
         self.plot_cumulative_requests()
         self.plot_response_time_histogram()
         self.plot_request_heatmap()
