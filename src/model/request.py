@@ -13,12 +13,14 @@ class Request:
         req_type (RequestType, optional): Tipo di richiesta (es. checkout, ricerca).
         arrival_time (float): Tempo di simulazione in cui la richiesta arriva.
         timeout (float): Tempo dopo il quale la richiesta viene automaticamente scartata se non servita
+        is_serviced, is_timeout: Flag per la corretta gestione della richiesta successivamente alla generazione
     """
     request_id: int
     req_type: RequestType
     arrival_time: float
     timeout: float
-
+    is_serviced = False  # Flag per sapere se un pod l'ha presa in carico
+    timed_out = False    # Flag che verrà attivato dal watcher
 
 # --- CLASSE DERIVATA (PER IL MIGLIORAMENTO) ---
 # Usiamo l'ereditarietà. PriorityRequest ha tutti i campi di Request più i suoi campi specifici.

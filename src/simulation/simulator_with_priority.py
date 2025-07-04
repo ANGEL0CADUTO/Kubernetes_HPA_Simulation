@@ -39,9 +39,12 @@ class SimulatorWithPriority:
         req_id_counter = 0
         req_types = list(self.config.TRAFFIC_PROFILE.keys())
         req_probs = list(self.config.TRAFFIC_PROFILE.values())
+
         while True:
+
             time_to_next = self.rng.exponential(1.0 / self.config.TOTAL_ARRIVAL_RATE)
             yield self.env.timeout(time_to_next)
+
             req_id_counter += 1
             chosen_type = self.rng.choice(req_types, p=req_probs)
             assigned_priority = self.config.REQUEST_TYPE_TO_PRIORITY[chosen_type]
@@ -51,10 +54,13 @@ class SimulatorWithPriority:
             new_request = PriorityRequest(
                 request_id=req_id_counter, req_type=chosen_type,
                 arrival_time=self.env.now, priority=assigned_priority,
-                service_time=service_time, timeout = type_timeout)
+                service_time=service_time, timeout=type_timeout)
 
             self.metrics.record_request_generation(self.env.now, assigned_priority)
             print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name} -> Priorità: {new_request.priority.name}) generata.")
+
+            # Avvia il processo "timeout watcher" per questa specifica richiesta
+            self.env.process(self.timeout_watcher(new_request))
 
             # --- MODIFICA CHIAVE: Inserimento usando PriorityItem ---
             # Si avvolge la richiesta in un PriorityItem.
@@ -73,7 +79,17 @@ class SimulatorWithPriority:
                 priority_item = yield self.request_queue.get()
                 # Estraiamo l'oggetto richiesta dall'attributo .item
                 request = priority_item.item
-                # -----------------------------------------------
+
+                # --- Gestione Timeout ---
+                # 1. Appena prendiamo la richiesta, la marchiamo come "in servizio"
+                #    per dire al suo watcher di non attivarle il timeout
+                request.is_serviced = True
+
+                # 2. Controlliamo se per caso il watcher ha attivato il timeout
+                #    proprio nell'istante in cui l'abbiamo prelevata
+                if request.timed_out:
+                    print(f"{self.env.now:.2f} [Pod {pod_id}]: Scartata richiesta {request.request_id} perché già scaduta.")
+                    continue # Salta al prossimo ciclo per prendere un'altra richiesta
 
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request.arrival_time
@@ -86,7 +102,9 @@ class SimulatorWithPriority:
                 response_time = completion_time - request.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento rich. {request.request_id}. "
                       f"Tempo di risposta: {response_time:.4f}s")
+
                 self.metrics.record_request_metrics(completion_time, request, response_time, wait_time)
+
         except simpy.Interrupt:
             print(f"{self.env.now:.2f} [Pod {pod_id}]: Ricevuto segnale di stop, terminazione.")
 
@@ -134,6 +152,22 @@ class SimulatorWithPriority:
                     pod.process.interrupt()
                 self.available_pod_ids.add(pod.id)
             self.active_pods = self.active_pods[:-num_to_remove]
+
+    def timeout_watcher(self, request: PriorityRequest):
+        """
+        Questo processo attende per la durata del timeout della richiesta.
+        Se la richiesta non è ancora stata servita, la marca come scaduta.
+        """
+        # Aspetta per la durata del timeout
+        yield self.env.timeout(request.timeout)
+
+        # Controlla se il pod ha già preso in carico la richiesta nel frattempo
+        if not request.is_serviced:
+            # Se siamo qui, la richiesta è ancora in coda ed è scaduta.
+            request.timed_out = True
+            self.metrics.record_timeout(request)
+            print(f"{self.env.now:.2f} [Watcher]: Richiesta {request.request_id} TIMED OUT in coda.")
+
 
     def run(self):
         """Avvia la simulazione."""

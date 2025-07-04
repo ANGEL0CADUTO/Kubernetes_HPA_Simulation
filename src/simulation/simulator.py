@@ -54,6 +54,10 @@ class Simulator:
 
             print(
                 f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name}) generata.")
+
+            # Avvia il processo "timeout watcher" per questa specifica richiesta
+            self.env.process(self.timeout_watcher(new_request))
+
             self.request_queue.put(new_request)
 
     def pod_worker(self, pod_id):
@@ -65,6 +69,18 @@ class Simulator:
         while True:
             try:
                 request = yield self.request_queue.get()
+
+                # --- Gestione Timeout ---
+                # 1. Appena prendiamo la richiesta, la marchiamo come "in servizio"
+                #    per dire al suo watcher di non attivarle il timeout
+                request.is_serviced = True
+
+                # 2. Controlliamo se per caso il watcher ha attivato il timeout
+                #    proprio nell'istante in cui l'abbiamo prelevata
+                if request.timed_out:
+                    print(f"{self.env.now:.2f} [Pod {pod_id}]: Scartata richiesta {request.request_id} perché già scaduta.")
+                    continue # Salta al prossimo ciclo per prendere un'altra richiesta
+
 
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request.arrival_time
@@ -149,6 +165,22 @@ class Simulator:
 
             # Aggiorna la lista dei pod attivi
             self.active_pods = self.active_pods[:-num_to_remove]
+
+    def timeout_watcher(self, request: Request):
+        """
+        Questo processo attende per la durata del timeout della richiesta.
+        Se la richiesta non è ancora stata servita, la marca come scaduta.
+        """
+        # Aspetta per la durata del timeout
+        yield self.env.timeout(request.timeout)
+
+        # Controlla se il pod ha già preso in carico la richiesta nel frattempo
+        if not request.is_serviced:
+            # Se siamo qui, la richiesta è ancora in coda ed è scaduta.
+            request.timed_out = True
+            self.metrics.record_timeout(request.req_type)
+            print(f"{self.env.now:.2f} [Watcher]: Richiesta {request.request_id} TIMED OUT in coda.")
+
 
     def run(self):
         # ... (Questa funzione rimane INVARIATA) ...
