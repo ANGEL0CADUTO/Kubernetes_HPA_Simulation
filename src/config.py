@@ -20,8 +20,8 @@ CPU_TARGET = 0.60           # Utilizzo CPU target (60%) - un po' più basso per 
 MIN_PODS = 1                # Numero minimo di Pod
 # MAX_PODS è già definito sopra e verrà usato anche qui
 
-SCALE_UP_COOLDOWN = 60      # 1 minuto prima di poter fare un altro scale-up
-SCALE_DOWN_COOLDOWN = 300   # 5 minuti prima di poter fare un altro scale-down
+SCALE_UP_COOLDOWN = 30      # 1 minuto prima di poter fare un altro scale-up
+SCALE_DOWN_COOLDOWN = 150  # 5 minuti prima di poter fare un altro scale-down
 # Non modelliamo più il POD_STARTUP_TIME perché la capacità della risorsa è istantanea
 
 
@@ -36,6 +36,7 @@ class RequestType(Enum):
 
 # --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
 TOTAL_ARRIVAL_RATE = 15     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
+TARGET_QUEUE_LENGTH_PER_POD = 2  # NUOVA METRICA: scala se ci sono più di 2 richieste in attesa per pod
 
 TRAFFIC_PROFILE = {
     RequestType.LOGIN: 0.15,

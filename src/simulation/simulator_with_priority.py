@@ -1,4 +1,8 @@
 import simpy
+# --- MODIFICA CHIAVE: Import corretti da simpy.resources.store ---
+from simpy.resources.store import PriorityStore, PriorityItem
+from collections import defaultdict
+
 from src.config import Priority
 from src.model.request import PriorityRequest
 from src.controller.hpa import HPA
@@ -6,9 +10,9 @@ from src.service.service import PodService
 
 class SimulatorWithPriority:
     """
-    Simulatore per lo scenario migliorato con code di priorità.
-    Usa un pattern Dispatcher-Worker con un dispatcher a polling per garantire
-    un corretto scheduling e l'utilizzo di tutti i Pod.
+    Simulatore per lo scenario migliorato con una coda di priorità unica e robusta.
+    Questo modello elimina il dispatcher e usa simpy.PriorityStore con PriorityItem
+    per una gestione delle priorità efficiente e corretta.
     """
 
     class _Pod:
@@ -23,21 +27,15 @@ class SimulatorWithPriority:
         self.env = simpy.Environment()
         self.service = PodService(rng, config_module)
 
-        self.priority_queues = {
-            Priority.HIGH: simpy.Store(self.env),
-            Priority.MEDIUM: simpy.Store(self.env),
-            Priority.LOW: simpy.Store(self.env)
-        }
-
-        self.work_queue = simpy.Store(self.env)
+        # Si usa una singola PriorityStore.
+        self.request_queue = PriorityStore(self.env)
 
         self.active_pods = []
         self.next_pod_id = 0
         self.available_pod_ids = set()
 
     def request_generator(self):
-        """Genera richieste e le mette nelle code di priorità appropriate."""
-        # Questa funzione è già corretta e rimane invariata.
+        """Genera richieste e le mette nella PriorityStore usando PriorityItem."""
         req_id_counter = 0
         req_types = list(self.config.TRAFFIC_PROFILE.keys())
         req_probs = list(self.config.TRAFFIC_PROFILE.values())
@@ -54,48 +52,36 @@ class SimulatorWithPriority:
                 request_id=req_id_counter, req_type=chosen_type,
                 arrival_time=self.env.now, priority=assigned_priority,
                 service_time=service_time, timeout = type_timeout)
+
             self.metrics.record_request_generation(self.env.now, assigned_priority)
             print(f"{self.env.now:.2f} [Generator]: Richiesta {new_request.request_id} ({new_request.req_type.name} -> Priorità: {new_request.priority.name}) generata.")
-            yield self.priority_queues[new_request.priority].put(new_request)
 
-    # --- MODIFICA CHIAVE: DISPATCHER A POLLING, SEMPLICE E ROBUSTO ---
-    def dispatcher(self):
-        """
-        Processo centrale che osserva le code di priorità in un ciclo continuo (polling)
-        e sposta la richiesta più importante nella coda di lavoro.
-        """
-        while True:
-            found_request = False
-            # Scansiona le code dalla priorità più alta alla più bassa
-            for prio in sorted(self.config.Priority):
-                if len(self.priority_queues[prio].items) > 0:
-                    # Trovata una richiesta!
-                    request_to_dispatch = yield self.priority_queues[prio].get()
-                    yield self.work_queue.put(request_to_dispatch)
-                    found_request = True
-                    # Interrompe il for e fa ripartire il while, per ricontrollare sempre da HIGH
-                    break
-
-            # Se non ha trovato nessuna richiesta in nessuna coda,
-            # aspetta un istante infinitesimale prima di ricontrollare.
-            # Questo previene un ciclo infinito a vuoto ma mantiene il dispatcher reattivo.
-            if not found_request:
-                yield self.env.timeout(0.01)
+            # --- MODIFICA CHIAVE: Inserimento usando PriorityItem ---
+            # Si avvolge la richiesta in un PriorityItem.
+            # Il primo argomento è la priorità (valore numerico), il secondo è l'oggetto.
+            priority_value = assigned_priority.value
+            yield self.request_queue.put(PriorityItem(priority_value, new_request))
+            # --------------------------------------------------------
 
     def pod_worker(self, pod_id):
-        """
-        Processo che simula un Pod. È un semplice consumatore dalla work_queue.
-        Questa logica è robusta.
-        """
-        print(f"{self.env.now:.2f} [Pod {pod_id}]: Avviato.")
+        """Processo che simula un Pod. Consuma PriorityItem dalla PriorityStore."""
+        print(f"{self.env.now:.2f} [Pod {pod_id}]: Avviato e in attesa di lavoro.")
         try:
             while True:
-                request = yield self.work_queue.get()
+                # --- MODIFICA CHIAVE: Get dalla PriorityStore ---
+                # Il .get() ora restituisce un oggetto PriorityItem.
+                priority_item = yield self.request_queue.get()
+                # Estraiamo l'oggetto richiesta dall'attributo .item
+                request = priority_item.item
+                # -----------------------------------------------
+
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento rich. {request.request_id} "
                       f"(Priorità: {request.priority.name}). Attesa: {wait_time:.4f}s")
+
                 yield self.env.timeout(request.service_time)
+
                 completion_time = self.env.now
                 response_time = completion_time - request.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento rich. {request.request_id}. "
@@ -105,26 +91,31 @@ class SimulatorWithPriority:
             print(f"{self.env.now:.2f} [Pod {pod_id}]: Ricevuto segnale di stop, terminazione.")
 
     def metrics_recorder(self):
+        """Registra le metriche di sistema a intervalli regolari."""
         while True:
-            queue_lengths_per_prio = {p: len(self.priority_queues[p].items) for p in self.config.Priority}
-            # La lunghezza totale della coda è la somma delle code di priorità + la coda di lavoro
-            total_queue_len = sum(queue_lengths_per_prio.values()) + len(self.work_queue.items)
+            # --- MODIFICA CHIAVE: Itera sui PriorityItem nella coda ---
+            queue_lengths_per_prio = defaultdict(int)
+            # self.request_queue.items ora contiene PriorityItem
+            for p_item in self.request_queue.items:
+                req = p_item.item  # Estrai la richiesta effettiva
+                queue_lengths_per_prio[req.priority] += 1
+
+            total_queue_len = len(self.request_queue.items)
             pod_count = len(self.active_pods)
+
             self.metrics.record_system_metrics(self.env.now, pod_count, total_queue_len, queue_lengths_per_prio)
+            # -------------------------------------------------------------
             yield self.env.timeout(1)
 
-    # --- MODIFICA CHIAVE: CALCOLO UTILIZZO CORRETTO PER HPA ---
     def get_busy_pods_count(self):
-        """Calcola il numero di pod attualmente occupati."""
-        # Un Pod è "busy" se non è in attesa di prendere un task dalla coda di lavoro.
-        num_pods_waiting_for_work = len(self.work_queue.get_queue)
+        """Calcola il numero di pod attualmente occupati. Logica invariata."""
+        num_pods_waiting_for_work = len(self.request_queue.get_queue)
         num_active_pods = len(self.active_pods)
-        # Il numero di pod occupati sono quelli attivi meno quelli in attesa.
         num_busy_pods = num_active_pods - num_pods_waiting_for_work
         return max(0, num_busy_pods)
 
     def scale_to(self, desired_replicas):
-
+        """Gestisce lo scaling dei pod. Logica invariata."""
         current_replicas = len(self.active_pods)
         if desired_replicas > current_replicas:
             num_to_add = desired_replicas - current_replicas
@@ -145,12 +136,15 @@ class SimulatorWithPriority:
             self.active_pods = self.active_pods[:-num_to_remove]
 
     def run(self):
-        print("--- Avvio Simulatore con Code di Priorità (Dispatcher Model Robusto) ---")
+        """Avvia la simulazione."""
+        print("--- Avvio Simulatore con PriorityStore ---")
         self.env.process(self.request_generator())
-        self.env.process(self.dispatcher()) # Avvia il nuovo dispatcher
         self.env.process(self.metrics_recorder())
+
         self.scale_to(self.config.INITIAL_PODS)
+
         if self.config.HPA_ENABLED:
             HPA(self.env, self)
+
         self.env.run(until=self.config.SIMULATION_TIME)
         print("--- Simulazione con priorità Terminata ---")

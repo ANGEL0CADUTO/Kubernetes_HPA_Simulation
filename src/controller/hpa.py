@@ -1,11 +1,10 @@
-
 import math
-
 
 class HPA:
     """
     Rappresenta il processo del Horizontal Pod Autoscaler.
-    Monitora l'utilizzo del sistema e prende decisioni di scaling.
+    MODIFICATO: Ora scala in base alla lunghezza della coda per pod,
+    una metrica più adatta per carichi di lavoro basati su code.
     """
 
     def __init__(self, env, simulator):
@@ -22,28 +21,34 @@ class HPA:
         while True:
             yield self.env.timeout(self.config.HPA_SYNC_PERIOD)
 
-            num_active_pods = len(self.simulator.active_pods)  # <-- USA LA NUOVA LISTA
+            num_active_pods = len(self.simulator.active_pods)
 
-            if num_active_pods == 0:
-                current_utilization = 0.0
+            # Non usare più l'utilizzo, ma la lunghezza della coda
+            # Questo è un indicatore proattivo del carico
+            current_queue_length = len(self.simulator.request_queue.items)
+
+            if num_active_pods > 0:
+                # Calcola la metrica: quante richieste in attesa ci sono in media per ogni pod?
+                avg_queue_per_pod = current_queue_length / num_active_pods
             else:
-                num_busy_pods = self.simulator.get_busy_pods_count()
-                current_utilization = max(0, num_busy_pods) / num_active_pods
+                # Se non ci sono pod, l'utilizzo metrico è considerato infinito se c'è anche una sola richiesta
+                avg_queue_per_pod = float('inf') if current_queue_length > 0 else 0
 
-            if self.config.CPU_TARGET > 0:
-                desired_replicas = math.ceil(num_active_pods * (current_utilization / self.config.CPU_TARGET))
+            # Formula di scaling basata su metrica custom (standard in Kubernetes)
+            # desired_replicas = ceil(current_replicas * (current_metric / target_metric))
+            if self.config.TARGET_QUEUE_LENGTH_PER_POD > 0:
+                desired_replicas = math.ceil(num_active_pods * (avg_queue_per_pod / self.config.TARGET_QUEUE_LENGTH_PER_POD))
             else:
                 desired_replicas = num_active_pods
 
             desired_replicas = int(max(self.config.MIN_PODS, min(self.config.MAX_PODS, desired_replicas)))
 
             print(
-                f"{self.env.now:.2f} [HPA]: Pods attivi: {num_active_pods}, Utilizzo: {current_utilization:.2%}, "
-                f"Repliche Desiderate: {desired_replicas}")
+                f"{self.env.now:.2f} [HPA]: Pods attivi: {num_active_pods}, Lunghezza Coda: {current_queue_length}, "
+                f"Coda/Pod: {avg_queue_per_pod:.2f}, Repliche Desiderate: {desired_replicas}")
 
-            # Controlla se è necessario uno scaling
+            # La logica di scaling e cooldown rimane invariata
             if desired_replicas != num_active_pods:
-                # Applica il cooldown appropriato
                 if desired_replicas > num_active_pods:
                     if self.env.now >= self.last_scale_up_time + self.config.SCALE_UP_COOLDOWN:
                         print(f"{self.env.now:.2f} [HPA]: Avvio SCALE UP a {desired_replicas} pods.")
@@ -51,7 +56,7 @@ class HPA:
                         self.last_scale_up_time = self.env.now
                     else:
                         print(f"{self.env.now:.2f} [HPA]: Scale-Up bloccato da cooldown.")
-                else:  # desired_replicas < num_active_pods
+                else:
                     if self.env.now >= self.last_scale_down_time + self.config.SCALE_DOWN_COOLDOWN:
                         print(f"{self.env.now:.2f} [HPA]: Avvio SCALE DOWN a {desired_replicas} pods.")
                         self.simulator.scale_to(desired_replicas)
