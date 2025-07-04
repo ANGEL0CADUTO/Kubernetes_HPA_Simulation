@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
+from matplotlib.ticker import MultipleLocator
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
 
@@ -78,7 +78,29 @@ class Plotter:
 
         if plot_data:
             df_resp_time = pd.DataFrame(plot_data)
-            sns.barplot(data=df_resp_time, x='Categoria', y='Tempo Medio (s)', hue='Scenario', ax=ax1, palette=list(colors.values()))
+
+            # 1. Definiamo esplicitamente l'ordine delle barre per una narrazione "Prima -> Dopo"
+            hue_order_list = ['Senza Priorità', 'Con Priorità']
+
+            # 2. Creiamo la palette di colori NELLO STESSO ORDINE di hue_order_list
+            palette_ordered = [colors['no_prio'], colors['prio']]
+
+            # 3. Passiamo entrambi i parametri alla funzione barplot
+            sns.barplot(
+                data=df_resp_time,
+                x='Categoria',
+                y='Tempo Medio (s)',
+                hue='Scenario',
+                hue_order=hue_order_list,  # <-- Specifica l'ordine delle barre
+                palette=palette_ordered,   # <-- Specifica i colori nell'ordine corretto
+                ax=ax1
+            )
+
+            # 1. Troviamo il valore massimo effettivo tra i dati disegnati.
+            max_data_value = df_resp_time['Tempo Medio (s)'].max()
+
+            # 2. Impostiamo il limite superiore dell'asse Y a un valore MAGGIORE del massimo dei dati.
+            ax1.set_ylim(top=max_data_value * 1.4)
 
             ax1.set_title('Tempi di Risposta Medi per Tipo di Richiesta')
             ax1.set_xlabel('Tipo di Richiesta')
@@ -95,29 +117,37 @@ class Plotter:
             ax1.text(0.5, 0.5, 'Nessun dato sui tempi di risposta disponibile.', ha='center', va='center')
 
         # --- 2. GRAFICO A DESTRA: Confronto Metriche Chiave con % di Miglioramento ---
-        metrics_to_compare = ['Throughput (req/s)', 'Tempo Attesa Medio (s)', '% Timeout']
+        metrics_to_compare = ['Tempo di Risposta Medio (s)', 'Tempo Attesa Medio (s)', '% Timeout']
 
-        total_served_prio = sum(self.metrics_prio.requests_completed_by_priority.values())
         total_generated_prio = sum(self.metrics_prio.requests_generated_by_priority.values())
         total_timeouts_prio = sum(self.metrics_prio.requests_timed_out_by_priority.values())
-
-        throughput_prio = total_served_prio / self.config.SIMULATION_TIME if self.config.SIMULATION_TIME > 0 else 0
+        avg_response_prio = _calculate_overall_avg(self.metrics_prio.response_times_by_req_type)
         avg_wait_prio = _calculate_overall_avg(self.metrics_prio.wait_times_by_req_type)
         timeout_perc_prio = (total_timeouts_prio / total_generated_prio) * 100 if total_generated_prio > 0 else 0
 
         total_timeouts_no_prio = sum(self.metrics.requests_timed_out_data.values())
-        throughput_no_prio = self.metrics.total_requests_served / self.config.SIMULATION_TIME if self.config.SIMULATION_TIME > 0 else 0
+        avg_response_no_prio = _calculate_overall_avg(self.metrics.response_times_data)
         avg_wait_no_prio = _calculate_overall_avg(self.metrics.wait_times_data)
         timeout_perc_no_prio = (total_timeouts_no_prio / self.metrics.total_requests_generated) * 100 if self.metrics.total_requests_generated > 0 else 0
 
-        values_prio = [throughput_prio, avg_wait_prio, timeout_perc_prio]
-        values_no_prio = [throughput_no_prio, avg_wait_no_prio, timeout_perc_no_prio]
+        values_prio = [avg_response_prio, avg_wait_prio, timeout_perc_prio]
+        values_no_prio = [avg_response_no_prio, avg_wait_no_prio, timeout_perc_no_prio]
 
         x = np.arange(len(metrics_to_compare))
         width = 0.35
 
-        bars1 = ax2.bar(x - width/2, values_prio, width, label='Con Priorità', color=colors['prio'])
-        bars2 = ax2.bar(x + width/2, values_no_prio, width, label='Senza Priorità', color=colors['no_prio'])
+        # Barra di sinistra (Prima): SENZA Priorità
+        bars1 = ax2.bar(x - width/2, values_no_prio, width, label='Senza Priorità', color=colors['no_prio'])
+
+        # Barra di destra (Dopo): CON Priorità
+        bars2 = ax2.bar(x + width/2, values_prio, width, label='Con Priorità', color=colors['prio'])
+
+        # --- MODIFICA ---
+        # 1. Troviamo il valore massimo tra tutte le barre
+        max_data_value_ax2 = max(max(values_prio), max(values_no_prio))
+
+        # 2. Impostiamo il limite con un margine del 40%
+        ax2.set_ylim(top=max_data_value_ax2 * 1.4)
 
         ax2.set_title('Confronto Metriche Chiave', pad=15)
         ax2.set_ylabel('Valore')
@@ -128,18 +158,24 @@ class Plotter:
         legend2 = ax2.legend(title='Scenario')
         legend2.get_title().set_fontweight('bold')
 
+        # Aggiunge etichette numeriche sopra le barre
+        ax2.bar_label(bars1, padding=3, fmt='%.3f', fontsize=8)
+        ax2.bar_label(bars2, padding=3, fmt='%.3f', fontsize=8)
+
+        # massima ordinata del grafico
         y_max = ax2.get_ylim()[1]
+
+        # testo del miglioramento percentuale (Δ%)
         for i, metric_name in enumerate(metrics_to_compare):
             val_prio = values_prio[i]
             val_no_prio = values_no_prio[i]
 
             if val_no_prio > 0.0001:
-                if 'Throughput' in metric_name:
-                    improvement = ((val_prio - val_no_prio) / val_no_prio) * 100
-                else:
-                    improvement = ((val_no_prio - val_prio) / val_no_prio) * 100
 
-                sign = '+' if improvement >= 0 else ''
+                improvement = ((val_no_prio - val_prio) / val_no_prio) * 100
+
+                # la diminuzione è un miglioramento dato che sono tempi
+                sign = '-' if improvement >= 0 else ''
                 color = 'green' if improvement >= 0 else 'red'
                 text = f'Δ: {sign}{improvement:.1f}%'
 
@@ -151,7 +187,7 @@ class Plotter:
         plt.savefig('plots/comparison_dashboard_simplified.png', dpi=300, bbox_inches='tight')
         plt.show()
 
-    # --- I TUOI METODI DI PLOT ORIGINALI (NON TOCCATI) ---
+    # --- I METODI DI PLOT ORIGINALI (NON TOCCATI) ---
     def plot_pod_history(self):
         plt.figure(figsize=(12, 6))
           # colore chiaro di sfondo dietro le linee
