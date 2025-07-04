@@ -22,30 +22,39 @@ class HPA:
             yield self.env.timeout(self.config.HPA_SYNC_PERIOD)
 
             num_active_pods = len(self.simulator.active_pods)
-
-            # Non usare più l'utilizzo, ma la lunghezza della coda
-            # Questo è un indicatore proattivo del carico
             current_queue_length = len(self.simulator.request_queue.items)
 
             if num_active_pods > 0:
-                # Calcola la metrica: quante richieste in attesa ci sono in media per ogni pod?
                 avg_queue_per_pod = current_queue_length / num_active_pods
             else:
-                # Se non ci sono pod, l'utilizzo metrico è considerato infinito se c'è anche una sola richiesta
                 avg_queue_per_pod = float('inf') if current_queue_length > 0 else 0
 
-            # Formula di scaling basata su metrica custom (standard in Kubernetes)
-            # desired_replicas = ceil(current_replicas * (current_metric / target_metric))
+            # 1. Calcola le repliche desiderate in teoria (può essere un valore estremo)
             if self.config.TARGET_QUEUE_LENGTH_PER_POD > 0:
-                desired_replicas = math.ceil(num_active_pods * (avg_queue_per_pod / self.config.TARGET_QUEUE_LENGTH_PER_POD))
+                desired_replicas_raw = math.ceil(num_active_pods * (avg_queue_per_pod / self.config.TARGET_QUEUE_LENGTH_PER_POD))
+            else:
+                desired_replicas_raw = num_active_pods
+
+            # --- MODIFICA CHIAVE: Applica la politica di stabilità (limita la velocità) ---
+            # Limita il numero di pod da aggiungere/rimuovere in un singolo step.
+            if desired_replicas_raw > num_active_pods:
+                # Se vogliamo fare scale-up, non superare il massimo step consentito
+                limited_step = num_active_pods + self.config.MAX_SCALE_STEP
+                desired_replicas = min(desired_replicas_raw, limited_step)
+            elif desired_replicas_raw < num_active_pods:
+                # Se vogliamo fare scale-down, non superare il massimo step consentito
+                limited_step = num_active_pods - self.config.MAX_SCALE_STEP
+                desired_replicas = max(desired_replicas_raw, limited_step)
             else:
                 desired_replicas = num_active_pods
+            # --------------------------------------------------------------------------------
 
+            # 2. Applica i limiti MIN e MAX globali
             desired_replicas = int(max(self.config.MIN_PODS, min(self.config.MAX_PODS, desired_replicas)))
 
             print(
-                f"{self.env.now:.2f} [HPA]: Pods attivi: {num_active_pods}, Lunghezza Coda: {current_queue_length}, "
-                f"Coda/Pod: {avg_queue_per_pod:.2f}, Repliche Desiderate: {desired_replicas}")
+                f"{self.env.now:.2f} [HPA]: Pods attivi: {num_active_pods}, Coda/Pod: {avg_queue_per_pod:.2f}, "
+                f"Desiderate (Raw): {desired_replicas_raw}, Desiderate (Limitate): {desired_replicas}")
 
             # La logica di scaling e cooldown rimane invariata
             if desired_replicas != num_active_pods:

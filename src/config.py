@@ -13,6 +13,8 @@ NUM_WORKERS = 1
 INITIAL_PODS = 2            # Partiamo con 2 Pod attivi
 MAX_PODS = 8                # Massimo numero di Pod consentito
 
+
+
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
 HPA_ENABLED = True
 HPA_SYNC_PERIOD = 7        # HPA controlla le metriche ogni 15 secondi
@@ -20,6 +22,8 @@ CPU_TARGET = 0.60           # Utilizzo CPU target (60%) - un po' più basso per 
 MIN_PODS = 1                # Numero minimo di Pod
 # MAX_PODS è già definito sopra e verrà usato anche qui
 
+
+MAX_SCALE_STEP = 2
 SCALE_UP_COOLDOWN = 30      # 1 minuto prima di poter fare un altro scale-up
 SCALE_DOWN_COOLDOWN = 150  # 5 minuti prima di poter fare un altro scale-down
 # Non modelliamo più il POD_STARTUP_TIME perché la capacità della risorsa è istantanea
@@ -35,7 +39,7 @@ class RequestType(Enum):
 
 
 # --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
-TOTAL_ARRIVAL_RATE = 15     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
+TOTAL_ARRIVAL_RATE = 100     # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
 TARGET_QUEUE_LENGTH_PER_POD = 2  # NUOVA METRICA: scala se ci sono più di 2 richieste in attesa per pod
 
 TRAFFIC_PROFILE = {
@@ -106,9 +110,9 @@ class Priority(IntEnum):
 
 # --- Mappatura fissa da Tipo di Richiesta a Priorità ---
 REQUEST_TYPE_TO_PRIORITY = {
-    RequestType.LOGIN:       Priority.HIGH,
-    RequestType.CHECKOUT:    Priority.HIGH,
-    RequestType.ADD_TO_CART: Priority.MEDIUM,
-    RequestType.NAVIGATION:  Priority.MEDIUM,
-    RequestType.ANALYTICS:   Priority.LOW
+    RequestType.LOGIN:       Priority.HIGH,     # Utente va servito subito
+    RequestType.NAVIGATION:  Priority.HIGH,     # Delay qui uccide il funnel
+    RequestType.ADD_TO_CART: Priority.MEDIUM,   # Intermedia
+    RequestType.CHECKOUT:    Priority.LOW,      # Può aspettare qualche secondo
+    RequestType.ANALYTICS:   Priority.LOW       # Background
 }

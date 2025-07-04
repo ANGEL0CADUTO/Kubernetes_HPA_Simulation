@@ -8,3 +8,4 @@ xlsxwriter
 pandas
 seaborn
 openpyxl
+scipy
