@@ -41,8 +41,11 @@ class SimulatorWithPriority:
         req_probs = list(self.config.TRAFFIC_PROFILE.values())
 
         while True:
+            current_time = self.env.now
+            # Funzione di lambda nel tempo: ad es. crescita lineare da 50 a 70
+            lambda_dynamic = 50 + 20 * (current_time / self.config.SIMULATION_TIME)
 
-            time_to_next = self.rng.exponential(1.0 / self.config.TOTAL_ARRIVAL_RATE)
+            time_to_next = self.rng.exponential(1.0 / lambda_dynamic)
             yield self.env.timeout(time_to_next)
 
             req_id_counter += 1
