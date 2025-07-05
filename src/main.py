@@ -20,16 +20,15 @@ label2 = "Con Priorità"
 #tassi di arrivo dinamici
 tassi_costanti=[70,85,89] # stabile, vicino l'instabilità e instabile si posso modificare
 
-def main():
+def call_steady_simulations():
     """
     Funzione principale che orchestra l'intero processo.
     """
     print("--- Inizio Simulazione Steady-State ---")
     run_steady_state_experiment()
+    #simple_simulation()
 
-    # simple_simulation()
-
-def simple_simulation():
+def main():
     print("--- Inizio Progetto di Simulazione E-commerce ---")
 
     lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
