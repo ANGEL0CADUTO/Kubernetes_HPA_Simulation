@@ -10,8 +10,7 @@ import pandas as pd
 import seaborn as sns
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from matplotlib.ticker import MaxNLocator # per forzare assi Y interi
-from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
+
 
 matplotlib.use('Qt5Agg')
 plt.style.use('ggplot')
@@ -219,3 +218,203 @@ class SteadyStatePlotter:
             self.plot_steady_state_loss_ci(baseline_loss_results, prio_loss_results, output_dir, "loss_probability_ci.png")
 
         self.plot_steady_state_times_by_type(analyzer_baseline, analyzer_prio, warmup, batches, output_dir)
+        self.plot_convergence_baseline_overall()
+        self.plot_convergence_baseline_by_type()
+        self.plot_wait_time_comparison_trend()
+        self.plot_times_by_request_type_grid()
+
+    def plot_convergence_baseline_overall(self, output_dir="plots/transient_analysis"):
+        """
+        Crea un grafico che mostra la convergenza del tempo di risposta medio cumulativo
+        per l'intero scenario baseline. Utile per identificare il warm-up period.
+        """
+        print("Generazione grafico di convergenza generale (baseline)...")
+
+        # 1. Raccogli e ordina tutti i dati di risposta dalla metrica baseline
+        all_responses = self.metrics.get_all_response_times_with_timestamps()
+
+        if not all_responses:
+            print("Nessun dato di risposta per l'analisi di convergenza baseline.")
+            return
+
+        # 2. Calcola la media cumulativa (CUSUM)
+        timestamps = [t for t, v in all_responses]
+        values = [v for t, v in all_responses]
+        cumulative_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
+
+        # 3. Disegna il grafico
+        fig, ax = plt.subplots(figsize=(12, 7))
+        ax.plot(timestamps, cumulative_avg, color='r', label='Tempo Risposta Medio Cumulativo')
+
+        # Estetica
+        ax.set_title('Analisi della Convergenza del Tempo di Risposta Medio (Baseline)', fontsize=16)
+        ax.set_xlabel('Tempo di Simulazione (s)')
+        ax.set_ylabel('Tempo di Risposta Medio (s)')
+        ax.grid(True, which='both', linestyle='--', alpha=0.7)
+        ax.legend()
+
+        # Aggiungi una linea verticale per indicare il warm-up period scelto
+        warmup_period = 250 # Assumendo 250s come da discussione
+        ax.axvline(x=warmup_period, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_period}s)')
+        ax.legend()
+
+        plt.tight_layout()
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, "baseline_convergence_overall.png")
+        plt.savefig(save_path, dpi=300)
+        plt.show()
+
+        # Aggiungi questo metodo alla classe Plotter
+
+    def plot_convergence_baseline_by_type(self, output_dir="plots/transient_analysis"):
+        """
+        Crea un grafico che mostra la convergenza del tempo di risposta medio cumulativo
+        per ogni tipo di richiesta nello scenario baseline.
+        """
+        print("Generazione grafico di convergenza per tipo (baseline)...")
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+
+        # Itera su ogni tipo di richiesta presente nelle metriche
+        for req_type, history in self.metrics.response_times_history.items():
+            if not history:
+                continue
+
+            # Ordina i dati per questo tipo di richiesta
+            history.sort(key=lambda x: x[0])
+            timestamps = [t for t, v in history]
+            values = [v for t, v in history]
+
+            # Calcola e disegna la media cumulativa
+            cumulative_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
+            ax.plot(timestamps, cumulative_avg, label=f'{req_type.name}')
+
+        # Estetica
+        ax.set_title('Analisi della Convergenza per Tipo di Richiesta (Baseline)', fontsize=16)
+        ax.set_xlabel('Tempo di Simulazione (s)')
+        ax.set_ylabel('Tempo di Risposta Medio (s)')
+        ax.grid(True, which='both', linestyle='--', alpha=0.7)
+        ax.legend(title='Tipo di Richiesta')
+
+        plt.tight_layout()
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, "baseline_convergence_by_type.png")
+        plt.savefig(save_path, dpi=300)
+        plt.show()
+
+    def plot_wait_time_comparison_trend(self, output_dir="plots/comparison"):
+        """
+        Confronta l'evoluzione del tempo di attesa medio cumulativo
+        tra lo scenario baseline e quello con priorità.
+        """
+        print("Generazione grafico di confronto andamento tempo di attesa...")
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+
+        # 1. Dati e curva per la Baseline
+        all_waits_baseline = []
+        for history in self.metrics.wait_times_history.values():
+            all_waits_baseline.extend(history)
+        all_waits_baseline.sort(key=lambda x: x[0])
+
+        if all_waits_baseline:
+            times_b, values_b = zip(*all_waits_baseline)
+            cusum_b = np.cumsum(values_b) / np.arange(1, len(values_b) + 1)
+            ax.plot(times_b, cusum_b, color='r', label='Senza Priorità')
+
+        # 2. Dati e curva per lo scenario con Priorità
+        all_waits_prio = []
+        for prio, history in self.metrics_prio.wait_times_by_priority.items():
+            timestamps = self.metrics_prio.completion_timestamps_by_priority[prio]
+            if len(timestamps) == len(history):
+                all_waits_prio.extend(zip(timestamps, history))
+        all_waits_prio.sort(key=lambda x: x[0])
+
+        if all_waits_prio:
+            times_p, values_p = zip(*all_waits_prio)
+            cusum_p = np.cumsum(values_p) / np.arange(1, len(values_p) + 1)
+            ax.plot(times_p, cusum_p, color='b', label='Con Priorità')
+
+        # Estetica
+        ax.set_title('Confronto Evoluzione del Tempo di Attesa Medio', fontsize=16)
+        ax.set_xlabel('Tempo di Simulazione (s)')
+        ax.set_ylabel('Tempo di Attesa Medio Cumulativo (s)')
+        ax.grid(True, which='both', linestyle='--', alpha=0.7)
+        ax.legend(title='Scenario')
+
+        plt.tight_layout()
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, "wait_time_trend_comparison.png")
+        plt.savefig(save_path, dpi=300)
+        plt.show()
+
+    def plot_times_by_request_type_grid(self, output_dir="plots/comparison"):
+        """
+        Crea una griglia di grafici, uno per ogni tipo di richiesta.
+        Ogni grafico confronta le curve cumulative di tempo di attesa e di risposta
+        per i due scenari (baseline vs priorità).
+        """
+        print("Generazione griglia di confronto per tipo di richiesta...")
+
+        all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
+        num_req_types = len(all_req_types)
+
+        # Calcola le dimensioni della griglia (es. 2x3 o 3x2)
+        ncols = 3
+        nrows = int(np.ceil(num_req_types / ncols))
+
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), sharex=True, sharey=True)
+        axes = axes.flatten() # Appiattisce l'array di assi per una facile iterazione
+
+        for i, req_type in enumerate(all_req_types):
+            ax = axes[i]
+
+            # --- Dati Baseline ---
+            # Tempo di risposta
+            resp_b = sorted(self.metrics.response_times_history.get(req_type, []), key=lambda x: x[0])
+            if resp_b:
+                times_rb, values_rb = zip(*resp_b)
+                ax.plot(times_rb, np.cumsum(values_rb) / np.arange(1, len(values_rb)+1),
+                        color='salmon', linestyle='--', label='Risposta (Baseline)')
+
+            # Tempo di attesa
+            wait_b = sorted(self.metrics.wait_times_history.get(req_type, []), key=lambda x: x[0])
+            if wait_b:
+                times_wb, values_wb = zip(*wait_b)
+                ax.plot(times_wb, np.cumsum(values_wb) / np.arange(1, len(values_wb)+1),
+                        color='red', label='Attesa (Baseline)')
+
+            # --- Dati con Priorità ---
+            # Tempo di risposta
+            times_rp = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
+            values_rp = self.metrics_prio.response_times_by_req_type.get(req_type, [])
+            if times_rp and len(times_rp) == len(values_rp):
+                resp_p = sorted(zip(times_rp, values_rp), key=lambda x: x[0])
+                times_rp, values_rp = zip(*resp_p)
+                ax.plot(times_rp, np.cumsum(values_rp) / np.arange(1, len(values_rp)+1),
+                        color='lightblue', linestyle='--', label='Risposta (Priorità)')
+
+            # Tempo di attesa
+            values_wp = self.metrics_prio.wait_times_by_req_type.get(req_type, [])
+            if times_rp and len(times_rp) == len(values_wp):
+                wait_p = sorted(zip(times_rp, values_wp), key=lambda x: x[0])
+                times_wp, values_wp = zip(*wait_p)
+                ax.plot(times_wp, np.cumsum(values_wp) / np.arange(1, len(values_wp)+1),
+                        color='blue', label='Attesa (Priorità)')
+
+            ax.set_title(req_type.name.replace('_', ' ').title())
+            ax.grid(True, linestyle='--', alpha=0.6)
+            ax.legend()
+
+        # Nasconde gli assi vuoti se il numero di grafici non riempie la griglia
+        for j in range(i + 1, len(axes)):
+            axes[j].set_visible(False)
+
+        fig.supxlabel('Tempo di Simulazione (s)', y=0.02)
+        fig.supylabel('Tempo Medio Cumulativo (s)', x=0.02)
+
+        plt.tight_layout(rect=(0.03, 0.03, 1, 0.95))
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, "times_grid_comparison.png")
+        plt.savefig(save_path, dpi=300)
+        plt.show()
