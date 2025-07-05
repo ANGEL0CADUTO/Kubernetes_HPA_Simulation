@@ -2,11 +2,15 @@ import math
 from enum import Enum
 from enum import IntEnum
 
-
-
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
 SIMULATION_TIME = 1000      # Tempo totale di simulazione (in secondi)
 LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
+
+# --- ANALISI ORIZZONTE INFINITO ---
+WARM_UP_TO_STEADY = 300         # tempo per raggiungere il comportamento transitorio
+STEADY_SIMULATION_TIME = 20000
+NUM_BATCHES = 20                # Un numero medio
+CONFIDENCE_LEVEL = 0.95
 
 # --- CONFIGURAZIONE DEL WORKER E DEI POD ---
 # Concettualmente abbiamo un solo worker node.
@@ -14,8 +18,6 @@ LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 NUM_WORKERS = 1
 INITIAL_PODS = 2            # Partiamo con 2 Pod attivi
 MAX_PODS = 8                # Massimo numero di Pod consentito
-
-
 
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
 HPA_ENABLED = True

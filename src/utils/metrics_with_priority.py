@@ -154,3 +154,20 @@ class MetricsWithPriority:
                 avg_wait_time = np.mean(self.wait_times_by_req_type[req_type])
                 print(f"- {req_type.name:12}: {avg_wait_time:.4f}")
         # -------------------------------------------------------------
+
+    def get_all_response_times_with_timestamps(self):
+        """
+        Appiattisce i dati dei tempi di risposta da tutte le priorità
+        in un'unica lista di tuple (timestamp, valore), ordinata per timestamp.
+        Necessario per l'analisi Batch Means.
+        """
+        all_data = []
+        for prio, times in self.response_times_by_priority.items():
+            timestamps = self.completion_timestamps_by_priority[prio]
+            # Si assicura che le lunghezze corrispondano
+            if len(timestamps) == len(times):
+                all_data.extend(zip(timestamps, times))
+
+        # Ordina per timestamp, che è il primo elemento della tupla
+        all_data.sort(key=lambda x: x[0])
+        return all_data

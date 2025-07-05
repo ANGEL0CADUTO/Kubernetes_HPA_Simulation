@@ -85,3 +85,26 @@ class Metrics:
                 print(f"- {req_type.name:12}: {timed_out_count} persi su {generated_count} -> P_loss = {p_loss_type:.2%}")
             else:
                 print(f"- {req_type.name:12}: 0 generati")
+
+    def get_all_response_times_with_timestamps(self):
+        """
+        Appiattisce i dati dei tempi di risposta da tutti i tipi di richiesta
+        in un'unica lista di tuple (timestamp, valore), ordinata per timestamp.
+        Questo è un prerequisito per l'analisi Batch Means.
+
+        Returns:
+            list: Una lista di tuple (timestamp, response_time) ordinata.
+        """
+        # 1. self.response_times_history è un dizionario dove le chiavi sono RequestType
+        #    e i valori sono liste di tuple (timestamp, valore).
+        #    Dobbiamo solo unire tutte queste liste in una sola.
+        all_data = []
+        for req_type_history in self.response_times_history.values():
+            all_data.extend(req_type_history)
+
+        # 2. Ordina la lista combinata in base al timestamp, che è il primo
+        #    elemento (indice 0) di ogni tupla. Questo è fondamentale per
+        #    l'analisi temporale e per la rimozione corretta del warm-up.
+        all_data.sort(key=lambda x: x[0])
+
+        return all_data
