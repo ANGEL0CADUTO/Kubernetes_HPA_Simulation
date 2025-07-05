@@ -5,7 +5,7 @@ class PodService:
     """
 
     def __init__(self, rng, config):
-        self.rng = rng
+        self.rng = rng # Questo ora è il "service_rng"
         self.config = config
 
     def get_service_time(self, req_type):

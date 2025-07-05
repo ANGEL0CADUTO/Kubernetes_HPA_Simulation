@@ -17,12 +17,15 @@ class LehmerRNG:
         self.seed = (self.a * self.seed) % self.m
         return self.seed
 
-    def get_numpy_seed(self):
+    def get_numpy_seeds(self, count=1):
         """
-        Restituisce un seed valido per NumPy.
-        Dato che il nostro generatore produce valori sequenziali, ne generiamo un po'
-        per ottenere un seed iniziale sufficientemente "casuale" per NumPy.
+        Restituisce una lista di 'count' seed validi per NumPy,
+        garantendo che siano diversi tra loro.
         """
-        for _ in range(100):  # Scarta i primi 100 valori per "riscaldare" il generatore
+        for _ in range(100):  # "Riscalda" il generatore
             self._next_seed()
-        return self._next_seed()
+
+        seeds = []
+        for _ in range(count):
+            seeds.append(self._next_seed())
+        return seeds
