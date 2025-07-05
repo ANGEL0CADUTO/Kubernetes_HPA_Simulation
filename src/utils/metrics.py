@@ -29,6 +29,8 @@ class Metrics:
         self.requests_generated_data = defaultdict(int)
         # Un dizionario per contare quante richieste di ogni tipo sono andate in timeout
         self.requests_timed_out_data = defaultdict(int)
+        self.timeout_history = [] # <-- NUOVO: per salvare i timestamp dei timeout
+
 
     def record_request_generation(self, req_type: RequestType):
         self.total_requests_generated += 1
@@ -52,9 +54,11 @@ class Metrics:
         self.pod_count_history.append((timestamp, pod_count))
         self.queue_length_history.append((timestamp, queue_length))
 
-    def record_timeout(self, req_type: RequestType):
+    def record_timeout(self, req_type: RequestType, timestamp: float):
         """Registra una richiesta che è andata in timeout."""
         self.requests_timed_out_data[req_type] += 1
+        self.timeout_history.append((timestamp, req_type)) # <-- NUOVO
+
 
     def print_summary(self):
         """Stampa un riassunto delle metriche a fine simulazione."""
@@ -108,3 +112,37 @@ class Metrics:
         all_data.sort(key=lambda x: x[0])
 
         return all_data
+
+    def get_all_outcomes_as_binary_stream(self):
+        """
+        Crea una lista cronologica di tutti gli esiti (servito o perso),
+        rappresentati come 0 (servito) e 1 (perso/timeout).
+        """
+        # Richieste servite (esito = 0)
+        serviced = []
+        for req_type, history in self.response_times_history.items():
+            serviced.extend([(timestamp, 0) for timestamp, _ in history])
+
+        # Richieste perse (esito = 1)
+        timed_out = [(timestamp, 1) for timestamp, _ in self.timeout_history]
+
+        all_outcomes = serviced + timed_out
+        all_outcomes.sort(key=lambda x: x[0])
+        return all_outcomes
+
+    def get_outcomes_by_type_as_binary_stream(self, req_type_to_filter: RequestType):
+        """
+        Crea una lista cronologica di esiti (0=servito, 1=perso) per un TIPO di richiesta specifico.
+        """
+        # Richieste servite di questo tipo
+        serviced_history = self.response_times_history.get(req_type_to_filter, [])
+        serviced = [(timestamp, 0) for timestamp, _ in serviced_history]
+
+        # Richieste perse di questo tipo
+        # Assumendo che timeout_history contenga tuple (timestamp, req_type)
+        timed_out_history = self.timeout_history
+        timed_out = [(timestamp, 1) for timestamp, req_type in timed_out_history if req_type == req_type_to_filter]
+
+        all_outcomes = serviced + timed_out
+        all_outcomes.sort(key=lambda x: x[0])
+        return all_outcomes

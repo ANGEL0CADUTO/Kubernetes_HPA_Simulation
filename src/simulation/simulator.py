@@ -190,7 +190,7 @@ class Simulator:
         if not request.is_serviced:
             # Se siamo qui, la richiesta è ancora in coda ed è scaduta.
             request.timed_out = True
-            self.metrics.record_timeout(request.req_type)
+            self.metrics.record_timeout(request.req_type, self.env.now)
             print(f"{self.env.now:.2f} [Watcher]: Richiesta {request.request_id} TIMED OUT in coda.")
 
 

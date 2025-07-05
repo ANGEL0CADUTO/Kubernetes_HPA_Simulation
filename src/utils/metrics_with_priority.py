@@ -30,6 +30,7 @@ class MetricsWithPriority:
         self.requests_generated_by_priority = defaultdict(int)
         self.requests_timed_out_by_priority = defaultdict(int)
         self.requests_timed_out_by_req_type = defaultdict(int)
+        self.timeout_history = [] # <-- NUOVO
 
         self.response_times_by_priority = defaultdict(list)
         self.wait_times_by_priority = defaultdict(list)
@@ -84,10 +85,11 @@ class MetricsWithPriority:
 
         # ------------------------------------------------------------------
 
-    def record_timeout(self, request: PriorityRequest):
+    def record_timeout(self, request: PriorityRequest, timestamp: float):
         """Registra una richiesta che è andata in timeout (se implementato)."""
         self.requests_timed_out_by_priority[request.priority] += 1
         self.requests_timed_out_by_req_type[request.req_type] += 1
+        self.timeout_history.append((timestamp, request.req_type))   # <-- NUOVO
 
 
     def to_dataframe(self):
@@ -171,3 +173,41 @@ class MetricsWithPriority:
         # Ordina per timestamp, che è il primo elemento della tupla
         all_data.sort(key=lambda x: x[0])
         return all_data
+
+    def get_all_outcomes_as_binary_stream(self):
+        """
+        Crea una lista cronologica di tutti gli esiti (servito o perso),
+        rappresentati come 0 (servito) e 1 (perso/timeout).
+        """
+        # 1. Raccogliamo i timestamp di tutte le richieste servite.
+        serviced = []
+        for req_type, timestamps in self.completion_timestamps_by_req_type.items():
+            # Per ogni timestamp di completamento, registriamo un successo (0).
+            serviced.extend([(timestamp, 0) for timestamp in timestamps])
+
+        # 2. Raccogliamo i timestamp delle richieste perse.
+        #    `self.timeout_history` salva tuple (timestamp, request).
+        timed_out = [(timestamp, 1) for timestamp, _ in self.timeout_history]
+
+        # 3. Combiniamo e ordiniamo cronologicamente.
+        all_outcomes = serviced + timed_out
+        all_outcomes.sort(key=lambda x: x[0])
+
+        return all_outcomes
+
+    def get_outcomes_by_type_as_binary_stream(self, req_type_to_filter: RequestType):
+        """
+        Crea una lista cronologica di esiti (0=servito, 1=perso) per un TIPO di richiesta specifico.
+        """
+        # Richieste servite di questo tipo
+        serviced_timestamps = self.completion_timestamps_by_req_type.get(req_type_to_filter, [])
+        serviced = [(timestamp, 0) for timestamp in serviced_timestamps]
+
+        # Richieste perse di questo tipo
+        # Assumendo che timeout_history contenga tuple (timestamp, request_object)
+        timed_out_history = self.timeout_history
+        timed_out = [(timestamp, 1) for timestamp, req_type in timed_out_history if req_type == req_type_to_filter]
+
+        all_outcomes = serviced + timed_out
+        all_outcomes.sort(key=lambda x: x[0])
+        return all_outcomes

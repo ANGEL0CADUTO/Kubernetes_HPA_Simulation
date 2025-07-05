@@ -8,7 +8,7 @@ LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 
 # --- ANALISI ORIZZONTE INFINITO ---
 WARM_UP_TO_STEADY = 300         # tempo per raggiungere il comportamento transitorio
-STEADY_SIMULATION_TIME = 20000
+STEADY_SIMULATION_TIME = 10000
 NUM_BATCHES = 20                # Un numero medio
 CONFIDENCE_LEVEL = 0.95
 
