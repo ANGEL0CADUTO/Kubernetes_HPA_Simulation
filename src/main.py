@@ -37,6 +37,7 @@ def main():
         # Esempio di tasso variabile:
         # "ciclo_giornaliero": lambda t: 50 + 40 * np.sin(2 * np.pi * t / (config.SIMULATION_TIME / 2))
     }
+    """
 
     # Il generatore Lehmer ci fornisce una base di seed riproducibile
     lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
@@ -72,7 +73,7 @@ def main():
             service_rng=service_rng_base,
             lambda_function=lambda_fn  # Passiamo la funzione lambda
         )
-        simulator.run()
+        simulator.run(simulation_duration=config.SIMULATION_TIME)
         metrics.print_summary()
         print("\n--- Esecuzione baseline terminata ---")
 
@@ -92,7 +93,7 @@ def main():
             service_rng=service_rng_prio,
             lambda_function=lambda_fn # Passiamo la stessa funzione lambda
         )
-        simulator_prio.run()
+        simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
         metrics_prio.print_summary()
         print("\n--- Esecuzione migliorativa terminata ---")
 
@@ -110,7 +111,7 @@ def main():
         # Generiamo i grafici salvandoli nella cartella dedicata
         plotter = Plotter(metrics, metrics_prio, config)
         plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
-
+"""
     # Modificare il flag nel file di configurazione per attivare/disattivare simulazione a orizzonte infinito
     if config.STEADY_ENABLED:
         print("--- Inizio Simulazione Steady-State ---")
@@ -129,19 +130,41 @@ def run_steady_state_experiment():
 
     output_dir = "plots/steady_state"
 
+    steady_lambda_fn = lambda t: 70
+
+    # Creiamo i 3 generatori RNG necessari, usando il seed di base per riproducibilità
+    base_seed = config.LEHMER_SEED
+    lehmer_rng = LehmerRNG(seed=base_seed)
+    seeds = lehmer_rng.get_numpy_seeds(count=3)
+    arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
+
     # --- ESECUZIONE BASELINE ---
-    print("\n--- Esecuzione Scenario Baseline ---")
-    rng_baseline = np.random.default_rng(config.LEHMER_SEED)
+    print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
     metrics_baseline = Metrics()
-    simulator_baseline = Simulator(config, metrics_baseline, rng_baseline)
-    simulator_baseline.run()
+
+    simulator_baseline = Simulator(
+        config_module=config,
+        metrics=metrics_baseline,
+        arrival_rng=np.random.default_rng(arrival_seed),
+        choice_rng=np.random.default_rng(choice_seed),
+        service_rng=np.random.default_rng(service_seed),
+        lambda_function=steady_lambda_fn
+    )
+    simulator_baseline.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
     # --- ESECUZIONE PRIORITÀ ---
-    print("\n--- Esecuzione Scenario con Priorità ---")
-    rng_prio = np.random.default_rng(config.LEHMER_SEED)
+    print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
     metrics_prio = MetricsWithPriority(config)
-    simulator_prio = SimulatorWithPriority(config, metrics_prio, rng_prio)
-    simulator_prio.run()
+
+    simulator_prio = SimulatorWithPriority(
+        config_module=config,
+        metrics=metrics_prio,
+        arrival_rng=np.random.default_rng(arrival_seed),
+        choice_rng=np.random.default_rng(choice_seed),
+        service_rng=np.random.default_rng(service_seed),
+        lambda_function=steady_lambda_fn
+    )
+    simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
     # --- PLOTTING FINALE CONFRONTO ---
     print("\n--- Generazione Report Steady-State ---")

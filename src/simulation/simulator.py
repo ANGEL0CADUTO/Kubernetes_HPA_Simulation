@@ -133,11 +133,11 @@ class Simulator:
             self.metrics.record_timeout(request.req_type, self.env.now)
             print(f"{self.env.now:.2f} [Watcher]: Richiesta {request.request_id} TIMED OUT in coda.")
 
-    def run(self):
+    def run(self, simulation_duration: float):
         print("--- Avvio Simulatore (Baseline - FIFO) ---")
         self.env.process(self.request_generator())
         self.env.process(self.metrics_recorder())
         self.scale_to(self.config.INITIAL_PODS)
         if self.config.HPA_ENABLED: HPA(self.env, self)
-        self.env.run(until=self.config.SIMULATION_TIME)
+        self.env.run(until=simulation_duration)
         print("--- Simulazione Baseline Terminata ---")
