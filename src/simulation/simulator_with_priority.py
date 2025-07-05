@@ -3,7 +3,7 @@ import simpy
 from simpy.resources.store import PriorityStore, PriorityItem
 from collections import defaultdict
 
-from src.config import Priority
+
 from src.model.request import PriorityRequest
 from src.controller.hpa import HPA
 from src.service.service import PodService
@@ -20,7 +20,7 @@ class SimulatorWithPriority:
             self.id = pod_id
             self.process = process
 
-    def __init__(self, config_module, metrics, rng):
+    def __init__(self, config_module, metrics, rng, lambda_function=None):
         self.config = config_module
         self.metrics = metrics
         self.rng = rng
@@ -33,6 +33,9 @@ class SimulatorWithPriority:
         self.active_pods = []
         self.next_pod_id = 0
         self.available_pod_ids = set()
+        self.lambda_function = lambda_function or (
+            lambda t: 50 + 20 * (t / self.config.SIMULATION_TIME)
+        )
 
     def request_generator(self):
         """Genera richieste e le mette nella PriorityStore usando PriorityItem."""
@@ -42,8 +45,8 @@ class SimulatorWithPriority:
 
         while True:
             current_time = self.env.now
-            # Funzione di lambda nel tempo: ad es. crescita lineare da 50 a 70
-            lambda_dynamic = 50 + 20 * (current_time / self.config.SIMULATION_TIME)
+
+            lambda_dynamic = self.lambda_function(current_time)
 
             time_to_next = self.rng.exponential(1.0 / lambda_dynamic)
             yield self.env.timeout(time_to_next)

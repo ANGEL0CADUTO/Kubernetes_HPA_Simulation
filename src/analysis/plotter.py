@@ -1,4 +1,5 @@
-from os import makedirs
+import os
+
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -16,8 +17,6 @@ plt.style.use('ggplot')
 
 
 
-def ensure_plot_dir():
-    makedirs('plots', exist_ok=True)
 
 
 def _get_all_raw_data(data_by_type: dict):
@@ -40,7 +39,7 @@ class Plotter:
 
 
     # --- IL NUOVO DASHBOARD DI CONFRONTO (UNICA PARTE NUOVA) ---
-    def plot_comparison_dashboard(self):
+    def plot_comparison_dashboard(self,output_dir, filename):
         """
         Crea un dashboard di confronto 1x2 che confronta direttamente le performance
         dei due scenari in modo chiaro e intuitivo.
@@ -187,12 +186,13 @@ class Plotter:
                          bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor=color))
 
         plt.tight_layout(rect=[0, 0, 1, 0.96])
-        ensure_plot_dir()
-        plt.savefig('plots/comparison_dashboard.png', dpi=300, bbox_inches='tight')
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
     # --- I METODI DI PLOT ORIGINALI (NON TOCCATI) ---
-    def plot_pod_history(self):
+    def plot_pod_history(self, output_dir, filename):
         plt.figure(figsize=(12, 6))
           # colore chiaro di sfondo dietro le linee
         if self.metrics.pod_count_history:
@@ -209,11 +209,12 @@ class Plotter:
         plt.legend(loc='upper right', frameon=False)
         plt.ylim(self.config.INITIAL_PODS, self.config.MAX_PODS + 1)
         plt.tight_layout()
-        ensure_plot_dir()
-        plt.savefig('plots/pod_count_history.png', dpi=300, bbox_inches='tight')
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
-    def plot_queue_history(self):
+    def plot_queue_history(self, output_dir, filename):
         if not self.metrics.queue_length_history and not self.metrics_prio.queue_lengths:
             return
         plt.figure(figsize=(12, 6))
@@ -237,11 +238,12 @@ class Plotter:
         plt.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.5)
         plt.legend(loc='upper right', frameon=False)
         plt.tight_layout()
-        ensure_plot_dir()
-        plt.savefig('plots/queue_length_history.png', dpi=300, bbox_inches='tight')
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
-    def plot_response_time_trend(self):
+    def plot_response_time_trend(self,output_dir, filename):
         plt.figure(figsize=(12, 6))
         all_responses_senza = []
         for req_type in sorted(self.metrics.response_times_history, key=lambda e: e.name):
@@ -281,11 +283,12 @@ class Plotter:
         plt.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.5)
         plt.legend(loc='upper right', frameon=False)
         plt.tight_layout()
-        ensure_plot_dir()
-        plt.savefig('plots/response_time_trend.png', dpi=300, bbox_inches='tight')
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
-    def plot_wait_time_trend(self):
+    def plot_wait_time_trend(self,output_dir, filename):
         plt.figure(figsize=(12, 6))
         window_size = 50
         all_waits_senza = []
@@ -324,11 +327,12 @@ class Plotter:
         plt.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.5)
         plt.legend(loc='upper right', frameon=False)
         plt.tight_layout()
-        ensure_plot_dir()
-        plt.savefig("plots/wait_time_trend.png", dpi=300, bbox_inches='tight')
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
-    def plot_loss_by_type(self):
+    def plot_loss_by_type(self,output_dir, filename):
         """
         Crea un grafico a barre che confronta il numero di richieste perse (timeout)
         per ogni tipo, tra lo scenario con e senza priorità.
@@ -415,8 +419,9 @@ class Plotter:
         plt.title("Richieste perse per tipo di Richiesta")
 
         plt.tight_layout(rect=[0, 0, 1, 0.96])
-        ensure_plot_dir()
-        plt.savefig('plots/loss_comparison_by_type.png', dpi=300)
+        os.makedirs(output_dir, exist_ok=True)
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
 
 
@@ -425,12 +430,4 @@ class Plotter:
 
 
 
-    # --- METODO DI REPORTING (AGGIORNATO PER CHIAMARE IL NUOVO DASHBOARD) ---
-    def generate_comprehensive_report(self):
-        self.plot_loss_by_type()
-        self.plot_comparison_dashboard()
-        self.plot_pod_history()
-        self.plot_queue_history()
-        self.plot_wait_time_trend()
-        self.plot_response_time_trend()
 

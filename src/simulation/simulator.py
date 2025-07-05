@@ -15,7 +15,7 @@ class Simulator:
             self.id = pod_id
             self.process = process
 
-    def __init__(self, config_module, metrics, rng):
+    def __init__(self, config_module, metrics, rng, lambda_function=None):
         self.config = config_module
         self.metrics = metrics
         self.rng = rng
@@ -29,6 +29,12 @@ class Simulator:
         self.next_pod_id = 0
         # --- NUOVA AGGIUNTA: Pool per riutilizzare gli ID ---
         self.available_pod_ids = set()
+        # -------------------------
+        #Imposto la funzione per i tassi di arrivo dinamici
+        self.lambda_function = lambda_function or (
+            lambda t: 50 + 20 * (t / self.config.SIMULATION_TIME)
+        )
+
 
     def request_generator(self):
         # ... (Questa funzione rimane INVARIATA) ...
@@ -39,8 +45,8 @@ class Simulator:
         while True:
             current_time = self.env.now
 
-            # Funzione di lambda nel tempo: ad es. crescita lineare da 50 a 70
-            lambda_dynamic = 50 + 20 * (current_time / self.config.SIMULATION_TIME)
+            # Calcola lambda dinamico in base al tempo corrente
+            lambda_dynamic = self.lambda_function(current_time)
 
             # Intervallo esponenziale in base a lambda attuale
             time_to_next = self.rng.exponential(1.0 / lambda_dynamic)
