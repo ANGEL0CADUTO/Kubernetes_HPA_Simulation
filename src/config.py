@@ -11,6 +11,7 @@ WARM_UP_TO_STEADY = 300         # tempo per raggiungere il comportamento transit
 STEADY_SIMULATION_TIME = 10000
 NUM_BATCHES = 20                # Un numero medio
 CONFIDENCE_LEVEL = 0.95
+STEADY_ENABLED = True            # Per comodità la attiviamo solo quando necessario perché molto lunga
 
 # --- CONFIGURAZIONE DEL WORKER E DEI POD ---
 # Concettualmente abbiamo un solo worker node.

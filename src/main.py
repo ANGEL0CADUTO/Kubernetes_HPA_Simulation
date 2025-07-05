@@ -21,15 +21,6 @@ label2 = "Con Priorità"
 #tassi di arrivo dinamici
 tassi_costanti=[70,85,89] # stabile, vicino l'instabilità e instabile si posso modificare
 
-def call_steady_simulations():
-    """
-    Funzione principale che orchestra l'intero processo,
-    eseguendo le simulazioni per diversi tassi di arrivo.
-    """
-    print("--- Inizio Simulazione Steady-State ---")
-    run_steady_state_experiment()
-    #simple_simulation()
-
 def main():
     """
     Funzione principale che orchestra l'intero processo,
@@ -120,7 +111,14 @@ def main():
         plotter = Plotter(metrics, metrics_prio, config)
         plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
 
+    # Modificare il flag nel file di configurazione per attivare/disattivare simulazione a orizzonte infinito
+    if config.STEADY_ENABLED:
+        print("--- Inizio Simulazione Steady-State ---")
+        run_steady_state_experiment()
+        print("--- Fine Simulazione Steady-State ---")
+
     print("\nTutte le simulazioni sono terminate.")
+
 
 def run_steady_state_experiment():
     """
