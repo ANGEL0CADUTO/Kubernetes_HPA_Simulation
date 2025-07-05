@@ -1,18 +1,12 @@
-# src/utils/metrics_with_priority.py
-
 import pandas as pd
 from collections import defaultdict
 import numpy as np
 
-# --- Import corretti ---
 from src.config import Priority, RequestType
 from src.model.request import PriorityRequest
 
 class MetricsWithPriority:
-    """
-    Raccoglie e calcola le metriche di performance per la simulazione
-    con code di priorità, disaggregando i risultati per classe di priorità.
-    """
+    # ... (tutta la parte __init__ rimane invariata) ...
     def __init__(self, config_module):
         self.config = config_module
 
@@ -30,6 +24,7 @@ class MetricsWithPriority:
         self.requests_generated_by_priority = defaultdict(int)
         self.requests_timed_out_by_priority = defaultdict(int)
         self.requests_timed_out_by_req_type = defaultdict(int)
+        self.requests_generated_by_req_type = defaultdict(int)
 
         self.response_times_by_priority = defaultdict(list)
         self.wait_times_by_priority = defaultdict(list)
@@ -45,11 +40,15 @@ class MetricsWithPriority:
         self.wait_times_by_req_type = defaultdict(list)
         # -----------------------------------------------------------------
 
-    def record_request_generation(self, timestamp: float, priority: Priority):
+    # --- CORREZIONE QUI ---
+    def record_request_generation(self, timestamp: float, priority: Priority, req_type: RequestType):
         """Registra il timestamp di quando una richiesta è generata."""
         self.request_generation_timestamps.append(timestamp)
         self.requests_generated_by_priority[priority] += 1
+        # Usa il parametro 'req_type' invece della variabile inesistente 'request'
+        self.requests_generated_by_req_type[req_type] += 1
 
+    # ... (record_system_metrics e record_request_metrics rimangono invariati) ...
     def record_system_metrics(self, timestamp, pod_count, queue_len, queue_len_per_prio: dict):
         """Registra lo stato del sistema a intervalli regolari."""
         self.timestamps.append(timestamp)
@@ -83,13 +82,14 @@ class MetricsWithPriority:
         self.wait_times_by_req_type[req_type].append(wait_time)
 
         # ------------------------------------------------------------------
-
+    # --- CORREZIONE QUI ---
     def record_timeout(self, request: PriorityRequest):
         """Registra una richiesta che è andata in timeout (se implementato)."""
         self.requests_timed_out_by_priority[request.priority] += 1
         self.requests_timed_out_by_req_type[request.req_type] += 1
+        # La linea che incrementava le richieste generate è stata RIMOSSA.
 
-
+    # ... (tutto il resto del file, inclusi to_dataframe e print_summary, rimane invariato) ...
     def to_dataframe(self):
         """
         Converte le metriche di sistema in un DataFrame pandas per un'analisi più semplice.
@@ -114,6 +114,12 @@ class MetricsWithPriority:
         print(f"Richieste totali perse (timeout): {total_timeouts}")
         print(f"Richieste rimaste in coda alla fine: {total_generated - total_completed - total_timeouts}")
 
+        print("\n--- Numero di Richieste Servite per Tipo ---")
+        for req_type in sorted(RequestType, key=lambda e: e.name):
+            # Usiamo self.response_times_by_req_type che registra solo le richieste completate
+            served_count = len(self.response_times_by_req_type.get(req_type, []))
+            print(f"- {req_type.name:12}: {served_count}")
+
         # --- STAMPA PER PRIORITÀ (INVARIATA) ---
         print("\n--- Dettaglio per Classe di Priorità ---")
         for prio in sorted(Priority):
@@ -121,19 +127,22 @@ class MetricsWithPriority:
             generated_count = self.requests_generated_by_priority[prio]
             num_timeouts = self.requests_timed_out_by_priority[prio]
 
-            if num_completed == 0:
+            if generated_count == 0:
+                print(f"\nClasse di Priorità: {prio.name} - Nessuna richiesta generata.")
                 continue
 
             print(f"\nClasse di Priorità: {prio.name}")
+            print(f"  - Richieste Generate: {generated_count}")
             print(f"  - Richieste Servite: {num_completed}")
 
-            avg_response_time = np.mean(self.response_times_by_priority[prio])
-            avg_wait_time = np.mean(self.wait_times_by_priority[prio])
-            max_response_time = max(self.response_times_by_priority[prio])
+            if self.response_times_by_priority[prio]:
+                avg_response_time = np.mean(self.response_times_by_priority[prio])
+                avg_wait_time = np.mean(self.wait_times_by_priority[prio])
+                max_response_time = max(self.response_times_by_priority[prio])
 
-            print(f"  - Tempo di Risposta Medio: {avg_response_time:.4f}s")
-            print(f"  - Tempo di Attesa Medio:   {avg_wait_time:.4f}s")
-            print(f"  - Tempo di Risposta Massimo: {max_response_time:.4f}s")
+                print(f"  - Tempo di Risposta Medio: {avg_response_time:.4f}s")
+                print(f"  - Tempo di Attesa Medio:   {avg_wait_time:.4f}s")
+                print(f"  - Tempo di Risposta Massimo: {max_response_time:.4f}s")
 
             # --- P_LOSS ---
             if generated_count > 0:
@@ -153,4 +162,3 @@ class MetricsWithPriority:
             if self.wait_times_by_req_type[req_type]:
                 avg_wait_time = np.mean(self.wait_times_by_req_type[req_type])
                 print(f"- {req_type.name:12}: {avg_wait_time:.4f}")
-        # -------------------------------------------------------------

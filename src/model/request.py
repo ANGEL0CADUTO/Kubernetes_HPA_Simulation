@@ -21,6 +21,7 @@ class Request:
     timeout: float
     is_serviced = False  # Flag per sapere se un pod l'ha presa in carico
     timed_out = False    # Flag che verrà attivato dal watcher
+    service_time: float
 
 # --- CLASSE DERIVATA (PER IL MIGLIORAMENTO) ---
 # Usiamo l'ereditarietà. PriorityRequest ha tutti i campi di Request più i suoi campi specifici.
@@ -35,4 +36,4 @@ class PriorityRequest(Request):
                               richiesta. Dipende dal tipo/priorità.
     """
     priority: Priority
-    service_time: float
+

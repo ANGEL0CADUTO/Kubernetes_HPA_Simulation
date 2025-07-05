@@ -90,7 +90,7 @@ REQUEST_TIMEOUTS = {
     RequestType.LOGIN: 1.0,
     RequestType.NAVIGATION: 1.0,
     RequestType.ADD_TO_CART: 3.0,
-    RequestType.CHECKOUT: 5.0,  # L'utente è più paziente durante il checkout
+    RequestType.CHECKOUT: 10.0,  # L'utente è più paziente durante il checkout
     RequestType.ANALYTICS: 5.0   # Richiesta interna, può essere scartata
 }
 
@@ -115,6 +115,6 @@ REQUEST_TYPE_TO_PRIORITY = {
     RequestType.LOGIN:       Priority.HIGH,     # Utente va servito subito
     RequestType.NAVIGATION:  Priority.HIGH,     # Delay qui uccide il funnel
     RequestType.ADD_TO_CART: Priority.MEDIUM,   # Intermedia
-    RequestType.CHECKOUT:    Priority.LOW,      # Può aspettare qualche secondo
+    RequestType.CHECKOUT:    Priority.MEDIUM,      # Può aspettare qualche secondo
     RequestType.ANALYTICS:   Priority.LOW       # Background
 }

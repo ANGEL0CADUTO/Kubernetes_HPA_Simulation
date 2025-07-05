@@ -62,6 +62,13 @@ class Metrics:
         print(f"Numero totale di richieste generate: {self.total_requests_generated}")
         print(f"Numero totale di richieste servite: {self.total_requests_served}")
 
+        print("\n--- Numero di Richieste Servite per Tipo ---")
+    # Itera sui tipi di richiesta in ordine per un output consistente
+        for req_type in sorted(RequestType, key=lambda e: e.name):
+            # Usiamo self.response_times_data perché registra solo le richieste completate
+            served_count = len(self.response_times_data.get(req_type, []))
+            print(f"- {req_type.name:12}: {served_count}")
+
         print("\n--- Tempo Medio di Risposta per Tipo di Richiesta (s) ---")
         for req_type in sorted(RequestType, key=lambda e: e.name):
             if self.response_times_data[req_type]:
