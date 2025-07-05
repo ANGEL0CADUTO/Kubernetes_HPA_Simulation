@@ -131,7 +131,7 @@ class SteadyStatePlotter:
         """
         print("Generazione grafico C.I. per probabilità di perdita per tipo...")
 
-        fig, ax = plt.subplots(1, 1, figsize=(12, 7))
+        fig, ax = plt.subplots(1, 1, figsize=(14, 8)) # Ho reso il grafico un po' più grande
         fig.suptitle('Probabilità di Perdita (Steady State) per Tipo con IC al 95%', fontsize=16)
 
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
@@ -155,26 +155,44 @@ class SteadyStatePlotter:
 
         if not plot_data:
             print("Nessun dato sufficiente per generare il grafico delle perdite per tipo.")
+            plt.close(fig)
             return
 
         df = pd.DataFrame(plot_data)
         hue_order = ['Senza Priorità', 'Con Priorità']
         palette = ['#ff0000', '#0000ff']
 
-        # Disegna il barplot principale
         sns.barplot(data=df, x='Categoria', y='Probabilità di Perdita', hue='Scenario',
                     order=category_names, hue_order=hue_order, palette=palette, ax=ax)
 
-        # Calcola le posizioni x per le barre e aggiungi le barre di errore
         num_categories = len(category_names)
         x_positions = np.arange(num_categories)
-        width = 0.4 # Larghezza di ogni singola barra
+        width = 0.4
 
         for i, scenario in enumerate(hue_order):
             offset = -width / 2 if i == 0 else width / 2
-            subset = df[df['Scenario'] == scenario].set_index('Categoria').loc[category_names]
+            subset = df[df['Scenario'] == scenario].set_index('Categoria').reindex(category_names)
+
+            # Aggiungi barre di errore
             ax.errorbar(x_positions + offset, subset['Probabilità di Perdita'], yerr=subset['Errore'],
-                        fmt='none', c='black', capsize=4, elinewidth=1)
+                        fmt='none', c='black', capsize=4, elinewidth=1.5)
+
+            # --- Aggiungiamo valore dell'intervallo ---
+            for j, (cat_name, row) in enumerate(subset.iterrows()):
+                mean = row['Probabilità di Perdita']
+                error = row['Errore']
+
+                # Calcola i limiti dell'intervallo
+                lower_bound = max(0, mean - error) # Evita valori negativi
+                upper_bound = mean + error
+
+                ci_text = f"[{lower_bound:.4f},\n {upper_bound:.4f}]" # Vado a capo per leggibilità
+
+                # Posiziona il testo sopra la barra di errore
+                # Usiamo `upper_bound` come coordinata y di base
+                ax.text(x_positions[j] + offset, upper_bound, ci_text,
+                        ha='center', va='bottom', fontsize=8, color='darkslategrey')
+            # -------------------------------------------------------------
 
         # Estetica
         ax.set_xlabel('Tipo di Richiesta')
@@ -183,6 +201,10 @@ class SteadyStatePlotter:
         ax.legend(title='Scenario')
         ax.grid(True, axis='y', linestyle='--', alpha=0.7)
         ax.set_ylim(bottom=0)
+
+        # Aumenta dinamicamente lo spazio superiore per far posto al testo
+        max_y_lim = df['Probabilità di Perdita'].max() + df['Errore'].max()
+        ax.set_ylim(top=max_y_lim * 1.3)
 
         plt.tight_layout(rect=(0, 0, 1, 0.96))
         os.makedirs(output_dir, exist_ok=True)
