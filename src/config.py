@@ -39,7 +39,7 @@ class RequestType(Enum):
 
 
 # --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
-TOTAL_ARRIVAL_RATE = 70   # Riduciamo leggermente per rendere lo scenario a 8 pod interessante
+TOTAL_ARRIVAL_RATE = 70
 TARGET_QUEUE_LENGTH_PER_POD = 2  # NUOVA METRICA: scala se ci sono più di 2 richieste in attesa per pod
 
 TRAFFIC_PROFILE = {

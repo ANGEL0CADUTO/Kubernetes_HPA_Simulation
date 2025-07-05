@@ -29,6 +29,7 @@ class MetricsWithPriority:
         self.requests_completed_by_priority = defaultdict(int)
         self.requests_generated_by_priority = defaultdict(int)
         self.requests_timed_out_by_priority = defaultdict(int)
+        self.requests_timed_out_by_req_type = defaultdict(int)
 
         self.response_times_by_priority = defaultdict(list)
         self.wait_times_by_priority = defaultdict(list)
@@ -86,6 +87,8 @@ class MetricsWithPriority:
     def record_timeout(self, request: PriorityRequest):
         """Registra una richiesta che è andata in timeout (se implementato)."""
         self.requests_timed_out_by_priority[request.priority] += 1
+        self.requests_timed_out_by_req_type[request.req_type] += 1
+
 
     def to_dataframe(self):
         """

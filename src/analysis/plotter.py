@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.ticker import MultipleLocator
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
+from matplotlib.ticker import MaxNLocator # per forzare assi Y interi
 
 matplotlib.use('Qt5Agg')
 plt.style.use('ggplot')
@@ -184,7 +184,7 @@ class Plotter:
 
         plt.tight_layout(rect=[0, 0, 1, 0.96])
         ensure_plot_dir()
-        plt.savefig('plots/comparison_dashboard_simplified.png', dpi=300, bbox_inches='tight')
+        plt.savefig('plots/comparison_dashboard.png', dpi=300, bbox_inches='tight')
         plt.show()
 
     # --- I METODI DI PLOT ORIGINALI (NON TOCCATI) ---
@@ -308,21 +308,103 @@ class Plotter:
         plt.savefig("plots/wait_time_trend.png", dpi=300, bbox_inches='tight')
         plt.show()
 
+    def plot_loss_by_type(self):
+        """
+        Crea un grafico a barre che confronta il numero di richieste perse (timeout)
+        per ogni tipo, tra lo scenario con e senza priorità.
+        """
+        print("Generazione del grafico di confronto delle perdite per tipo...")
+
+        # --- Setup della Figura e Colori ---
+        fig, ax = plt.subplots(1, 1, figsize=(10, 7))
+        ax.set_facecolor('#f9f9f9')
+
+        fig.suptitle("Confronto Richieste Perse per Tipo", fontsize=18, fontweight='bold')
+
+        colors = {
+            'prio':  '#0000ff',     # blue
+            'no_prio': '#ff0000'   # red
+        }
+
+        plot_data = []
+
+        all_req_types = (set(self.metrics.requests_timed_out_data.keys()) |
+                         set(self.metrics_prio.requests_timed_out_by_req_type.keys()))
+
+        if not all_req_types:
+            print("Nessuna perdita registrata in entrambi gli scenari. Grafico non generato.")
+            plt.close(fig) # Chiudi la figura vuota
+            return
+
+        for req_type in sorted(list(all_req_types), key=lambda x: x.name):
+            # Dati dallo scenario SENZA Priorità
+            losses_no_prio = self.metrics.requests_timed_out_data.get(req_type, 0)
+            plot_data.append({
+                'Categoria': req_type.name.replace('_', ' ').title(),
+                'Richieste Perse': losses_no_prio,
+                'Scenario': 'Senza Priorità'
+            })
+
+            # Dati dallo scenario CON Priorità
+            losses_prio = self.metrics_prio.requests_timed_out_by_req_type.get(req_type, 0)
+            plot_data.append({
+                'Categoria': req_type.name.replace('_', ' ').title(),
+                'Richieste Perse': losses_prio,
+                'Scenario': 'Con Priorità'
+            })
+
+        # --- DISEGNO DEL GRAFICO ---
+        df_losses = pd.DataFrame(plot_data)
+
+        # Definiamo l'ordine "Prima -> Dopo" e i colori corrispondenti
+        hue_order_list = ['Senza Priorità', 'Con Priorità']
+        palette_ordered = [colors['no_prio'], colors['prio']]
+
+        sns.barplot(
+            data=df_losses,
+            x='Categoria',
+            y='Richieste Perse', # <-- La nuova metrica sull'asse Y
+            hue='Scenario',
+            hue_order=hue_order_list,
+            palette=palette_ordered,
+            ax=ax
+        )
+
+        # --- MIGLIORAMENTI ESTETICI ---
+        ax.set_title('Timeout per Tipo di Richiesta')
+        ax.set_xlabel('Tipo di Richiesta')
+        ax.set_ylabel('Numero di Richieste Perse')
+        ax.tick_params(axis='x', rotation=45)
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+        ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+        # Forziamo l'asse Y ad avere solo valori interi, dato che contiamo le richieste
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+        # Aumentiamo lo spazio superiore per non schiacciare le etichette
+        max_data_value = df_losses['Richieste Perse'].max()
+        ax.set_ylim(top=max_data_value * 1.25)
+
+        # etichette numeriche sopra le barre (formattate come interi)
+        for container in ax.containers:
+            ax.bar_label(container, fmt='%d', padding=3, fontsize=9)
+
+        # legenda
+        ax.legend(title='Scenario', title_fontproperties={'weight': 'bold'})
+        plt.title("Richieste perse per tipo di Richiesta")
+
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        ensure_plot_dir()
+        plt.savefig('plots/loss_comparison_by_type.png', dpi=300)
+        plt.show()
 
 
-
-
-
-
-    # --- METODO DI REPORTING (AGGIORNATO PER CHIAMARE IL NUOVO DASHBOARD) ---
+# --- METODO DI REPORTING (AGGIORNATO PER CHIAMARE IL NUOVO DASHBOARD) ---
     def generate_comprehensive_report(self):
+        self.plot_loss_by_type()
         self.plot_comparison_dashboard()
         self.plot_pod_history()
         self.plot_queue_history()
         self.plot_wait_time_trend()
         self.plot_response_time_trend()
-
-
-
-
-    # --- METODO DI UTILITÀ (NON TOCCATO) ---
