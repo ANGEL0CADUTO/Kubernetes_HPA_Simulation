@@ -2,6 +2,8 @@ import math
 from enum import Enum
 from enum import IntEnum
 
+
+
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
 SIMULATION_TIME = 1000      # Tempo totale di simulazione (in secondi)
 LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer

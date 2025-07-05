@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-from collections import defaultdict
 from statistics import mean
 
 def export_summary(metrics, output_dir="output", label='non_prioritized', by_priority=False):
@@ -12,9 +11,11 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
     summary_rows = []
 
     if by_priority:
+        # Gestione MetricsWithPriority
         total_gen = len(metrics.request_generation_timestamps)
         total_completed = sum(metrics.requests_completed_by_priority.values())
         total_timed_out = sum(metrics.requests_timed_out_by_priority.values())
+
         summary_rows.append({
             'Metric': 'Total Requests Generated',
             'Value': total_gen
@@ -32,51 +33,109 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
             'Value': total_gen - total_completed - total_timed_out
         })
 
+        # Metriche per priorità
         for prio, lst in metrics.response_times_by_priority.items():
-            summary_rows.append({
-                'Metric': f"{prio.name} - Avg Response Time",
-                'Value': mean(lst) if lst else None
-            })
-            summary_rows.append({
-                'Metric': f"{prio.name} - Max Response Time",
-                'Value': max(lst) if lst else None
-            })
-        for prio, lst in metrics.wait_times_by_priority.items():
-            summary_rows.append({
-                'Metric': f"{prio.name} - Avg Wait Time",
-                'Value': mean(lst) if lst else None
-            })
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{prio.name} - Avg Response Time",
+                    'Value': mean(lst)
+                })
+                summary_rows.append({
+                    'Metric': f"{prio.name} - Max Response Time",
+                    'Value': max(lst)
+                })
 
+        for prio, lst in metrics.wait_times_by_priority.items():
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{prio.name} - Avg Wait Time",
+                    'Value': mean(lst)
+                })
+
+        # Metriche per tipo di richiesta
         for req_type, lst in metrics.response_times_by_req_type.items():
-            summary_rows.append({
-                'Metric': f"{req_type.name} - Avg Response Time (type)",
-                'Value': mean(lst)
-            })
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - Avg Response Time (type)",
+                    'Value': mean(lst)
+                })
+
         for req_type, lst in metrics.wait_times_by_req_type.items():
-            summary_rows.append({
-                'Metric': f"{req_type.name} - Avg Wait Time (type)",
-                'Value': mean(lst)
-            })
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - Avg Wait Time (type)",
+                    'Value': mean(lst)
+                })
+
+        # P_loss per priorità
+        for prio in metrics.requests_generated_by_priority:
+            generated = metrics.requests_generated_by_priority[prio]
+            timed_out = metrics.requests_timed_out_by_priority[prio]
+            if generated > 0:
+                p_loss = timed_out / generated
+                summary_rows.append({
+                    'Metric': f"{prio.name} - P_loss",
+                    'Value': p_loss
+                })
+
+        # P_loss per tipo di richiesta
+        for req_type in metrics.requests_timed_out_by_req_type:
+            # Dobbiamo calcolare le richieste generate per tipo
+            # Assumiamo che possiamo dedurlo dai dati disponibili
+            completed = len(metrics.response_times_by_req_type[req_type])
+            timed_out = metrics.requests_timed_out_by_req_type[req_type]
+            total_for_type = completed + timed_out
+            if total_for_type > 0:
+                p_loss = timed_out / total_for_type
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - P_loss (type)",
+                    'Value': p_loss
+                })
+
     else:
+        # Gestione Metrics (baseline)
         summary_rows.append({
             'Metric': 'Total Requests Generated',
             'Value': metrics.total_requests_generated
         })
         summary_rows.append({
-            'Metric': 'Total Requests Completed',
+            'Metric': 'Total Requests Served',
             'Value': metrics.total_requests_served
         })
+        summary_rows.append({
+            'Metric': 'Total Requests Timed Out',
+            'Value': sum(metrics.requests_timed_out_data.values())
+        })
 
+        # Metriche per tipo di richiesta
         for req_type, lst in metrics.response_times_data.items():
-            summary_rows.append({
-                'Metric': f"{req_type.name} - Avg Response Time",
-                'Value': mean(lst)
-            })
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - Avg Response Time",
+                    'Value': mean(lst)
+                })
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - Max Response Time",
+                    'Value': max(lst)
+                })
+
         for req_type, lst in metrics.wait_times_data.items():
-            summary_rows.append({
-                'Metric': f"{req_type.name} - Avg Wait Time",
-                'Value': mean(lst)
-            })
+            if lst:  # Solo se ci sono dati
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - Avg Wait Time",
+                    'Value': mean(lst)
+                })
+
+        # P_loss per tipo di richiesta (baseline)
+        for req_type in metrics.requests_generated_data:
+            generated = metrics.requests_generated_data[req_type]
+            timed_out = metrics.requests_timed_out_data[req_type]
+            if generated > 0:
+                p_loss = timed_out / generated
+                summary_rows.append({
+                    'Metric': f"{req_type.name} - P_loss",
+                    'Value': p_loss
+                })
 
     df_summary = pd.DataFrame(summary_rows)
 
@@ -89,6 +148,7 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
                 'pod_count': metrics.pod_counts[i],
                 'queue_length': metrics.queue_lengths[i]
             }
+            # Aggiungi lunghezze delle code per priorità
             for prio, lst in metrics.queue_lengths_per_priority.items():
                 if i < len(lst):
                     row[f"queue_length_{prio.name}"] = lst[i]
@@ -118,7 +178,16 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
                 })
         df_completion = pd.DataFrame(completion_data)
     else:
-        df_completion = pd.DataFrame(columns=['completion_timestamp', 'response_time'])  # Empty for baseline
+        # Per baseline, creiamo un log basato sui dati storici
+        completion_data = []
+        for req_type in metrics.response_times_history:
+            for ts, resp_time in metrics.response_times_history[req_type]:
+                completion_data.append({
+                    'request_type': req_type.name,
+                    'completion_timestamp': ts,
+                    'response_time': resp_time
+                })
+        df_completion = pd.DataFrame(completion_data)
 
     # -------- Sheet 4: Raw Response Times --------
     response_raw = []
@@ -150,6 +219,53 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
                 wait_raw.append({'group': f"type_{req_type.name}", 'wait_time': val})
     df_wait_raw = pd.DataFrame(wait_raw)
 
+    # -------- Sheet 6: Timeout Analysis --------
+    timeout_data = []
+    if by_priority:
+        # Timeout per priorità
+        for prio in metrics.requests_generated_by_priority:
+            generated = metrics.requests_generated_by_priority[prio]
+            timed_out = metrics.requests_timed_out_by_priority[prio]
+            completed = metrics.requests_completed_by_priority[prio]
+            timeout_data.append({
+                'category': 'priority',
+                'group': prio.name,
+                'generated': generated,
+                'completed': completed,
+                'timed_out': timed_out,
+                'p_loss': timed_out / generated if generated > 0 else 0
+            })
+
+        # Timeout per tipo di richiesta
+        for req_type in metrics.requests_timed_out_by_req_type:
+            completed = len(metrics.response_times_by_req_type[req_type])
+            timed_out = metrics.requests_timed_out_by_req_type[req_type]
+            total_for_type = completed + timed_out
+            timeout_data.append({
+                'category': 'request_type',
+                'group': req_type.name,
+                'generated': total_for_type,
+                'completed': completed,
+                'timed_out': timed_out,
+                'p_loss': timed_out / total_for_type if total_for_type > 0 else 0
+            })
+    else:
+        # Baseline timeout analysis
+        for req_type in metrics.requests_generated_data:
+            generated = metrics.requests_generated_data[req_type]
+            timed_out = metrics.requests_timed_out_data[req_type]
+            completed = len(metrics.response_times_data[req_type])
+            timeout_data.append({
+                'category': 'request_type',
+                'group': req_type.name,
+                'generated': generated,
+                'completed': completed,
+                'timed_out': timed_out,
+                'p_loss': timed_out / generated if generated > 0 else 0
+            })
+
+    df_timeout = pd.DataFrame(timeout_data)
+
     # -------- Scrittura Excel multi-foglio --------
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='aggregated', index=False)
@@ -157,7 +273,8 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
         df_completion.to_excel(writer, sheet_name='completion_log', index=False)
         df_resp_raw.to_excel(writer, sheet_name='raw_response', index=False)
         df_wait_raw.to_excel(writer, sheet_name='raw_wait', index=False)
+        df_timeout.to_excel(writer, sheet_name='timeout_analysis', index=False)
 
-    # Anche CSV di backup (solo il summary principale)
+    # CSV di backup (solo il summary principale)
     df_summary.to_csv(csv_path, index=False)
-    print(f"\n✅ Dati esportati in:\n- {excel_path} (multi-foglio)\n- {csv_path} (riepilogo)")
+    print(f"\nDati esportati in:\n- {excel_path} (multi-foglio)\n- {csv_path} (riepilogo)")

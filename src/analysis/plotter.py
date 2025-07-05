@@ -12,6 +12,10 @@ from matplotlib.ticker import MaxNLocator # per forzare assi Y interi
 matplotlib.use('Qt5Agg')
 plt.style.use('ggplot')
 
+
+
+
+
 def ensure_plot_dir():
     makedirs('plots', exist_ok=True)
 
@@ -217,8 +221,15 @@ class Plotter:
             times_senza_priorita = [t for t, _ in self.metrics.queue_length_history]
             lengths_senza_priorita = [l for _, l in self.metrics.queue_length_history]
             plt.plot(times_senza_priorita, lengths_senza_priorita, color='r', linewidth=2, label='Senza Priorità', alpha=0.8)
+            #linea media
+            media_senza=np.mean(lengths_senza_priorita)
+            plt.axhline(media_senza, color='orange', linestyle='--',linewidth=1,label='Media Senza Priorità: {:.2f}'.format(media_senza))
         if self.metrics_prio.queue_lengths and self.metrics_prio.timestamps:
             plt.plot(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths, color='b', linewidth=2, label='Con Priorità', alpha=0.8)
+            # Linea media
+            media_con = np.mean(self.metrics_prio.queue_lengths)
+            plt.axhline(media_con, color='green', linestyle='--', linewidth=1,
+                        label=f'Media Con Priorità ({media_con:.2f})')
         plt.title("Evoluzione della Lunghezza della Coda nel Tempo")
         plt.xlabel("Tempo di Simulazione (s)")
         plt.ylabel("Numero di Richieste in Coda")
@@ -232,7 +243,6 @@ class Plotter:
 
     def plot_response_time_trend(self):
         plt.figure(figsize=(12, 6))
-        window_size = 50
         all_responses_senza = []
         for req_type in sorted(self.metrics.response_times_history, key=lambda e: e.name):
             all_responses_senza.extend(self.metrics.response_times_history[req_type])
@@ -243,7 +253,9 @@ class Plotter:
             responses_senza = [r for _, r in all_responses_senza]
             cum_avg_senza = np.cumsum(responses_senza) / np.arange(1, len(responses_senza)+1)
             plt.plot(times_senza, cum_avg_senza, label='Senza Priorità', color='r', alpha=0.8)
-
+            #linea media
+            media_senza = np.mean(responses_senza)
+            plt.axhline(media_senza, color='orange', linestyle='--', linewidth=1, label='Media Senza Priorità: {:.2f}'.format(media_senza))
         all_responses_prio = []
         for req_type in sorted(self.metrics_prio.response_times_by_req_type, key=lambda e: e.name):
             times = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
@@ -256,7 +268,9 @@ class Plotter:
             responses_prio = [r for _, r in all_responses_prio]
             cum_avg_prio = np.cumsum(responses_prio) / np.arange(1, len(responses_prio)+1)
             plt.plot(times_prio, cum_avg_prio, label='Con Priorità', color='b', alpha=0.8)
-
+            #linea media
+            media_con = np.mean(responses_prio)
+            plt.axhline(media_con, color='green', linestyle='--', linewidth=1, label=f'Media Con Priorità: {media_con:.2f}')
         if not all_responses_senza and not all_responses_prio:
                 print("Nessun dato sui tempi di risposta da plottare.")
                 return
@@ -283,6 +297,9 @@ class Plotter:
             if len(waits_senza) >= window_size:
                 moving_avg = np.convolve(waits_senza, np.ones(window_size) / window_size, mode='valid')
                 plt.plot(times_senza[window_size - 1:], moving_avg, label='Senza Priorità', color='r', alpha=0.8)
+                #linea media
+                media_senza = np.mean(waits_senza)
+                plt.axhline(media_senza, color='orange', linestyle='--', linewidth=1, label=f'Media Senza Priorità: {media_senza:.2f}')
         all_waits_prio = []
         for req_type in sorted(self.metrics_prio.wait_times_by_req_type, key=lambda e: e.name):
             times = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
@@ -294,6 +311,9 @@ class Plotter:
             if len(waits_prio) >= window_size:
                 moving_avg = np.convolve(waits_prio, np.ones(window_size) / window_size, mode='valid')
                 plt.plot(times_prio[window_size - 1:], moving_avg, label='Con Priorità', color='b', alpha=0.8)
+                # linea media
+                media_con = np.mean(waits_prio)
+                plt.axhline(media_con, color='green', linestyle='--', linewidth=1, label=f'Media Con Priorità: {media_con:.2f}')
         if not all_waits_senza and not all_waits_prio:
             print("Nessun dato per i tempi di attesa.")
             return
@@ -316,7 +336,7 @@ class Plotter:
         print("Generazione del grafico di confronto delle perdite per tipo...")
 
         # --- Setup della Figura e Colori ---
-        fig, ax = plt.subplots(1, 1, figsize=(10, 7))
+        fig, ax = plt.subplots(1, 1, figsize=(12, 6))
         ax.set_facecolor('#f9f9f9')
 
         fig.suptitle("Confronto Richieste Perse per Tipo", fontsize=18, fontweight='bold')
@@ -400,7 +420,12 @@ class Plotter:
         plt.show()
 
 
-# --- METODO DI REPORTING (AGGIORNATO PER CHIAMARE IL NUOVO DASHBOARD) ---
+
+
+
+
+
+    # --- METODO DI REPORTING (AGGIORNATO PER CHIAMARE IL NUOVO DASHBOARD) ---
     def generate_comprehensive_report(self):
         self.plot_loss_by_type()
         self.plot_comparison_dashboard()
@@ -408,3 +433,4 @@ class Plotter:
         self.plot_queue_history()
         self.plot_wait_time_trend()
         self.plot_response_time_trend()
+
