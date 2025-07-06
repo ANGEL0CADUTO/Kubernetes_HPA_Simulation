@@ -33,11 +33,11 @@ def main():
     arrival_scenarios = {
         "tasso_70": lambda t: 70,
         "tasso_85": lambda t: 85,
-        "tasso_89": lambda t: 89,
+        "tasso_89": lambda t: 100,
         # Esempio di tasso variabile:
         # "ciclo_giornaliero": lambda t: 50 + 40 * np.sin(2 * np.pi * t / (config.SIMULATION_TIME / 2))
     }
-    """
+
 
     # Il generatore Lehmer ci fornisce una base di seed riproducibile
     lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
@@ -111,7 +111,7 @@ def main():
         # Generiamo i grafici salvandoli nella cartella dedicata
         plotter = Plotter(metrics, metrics_prio, config)
         plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
-"""
+
     # Modificare il flag nel file di configurazione per attivare/disattivare simulazione a orizzonte infinito
     if config.STEADY_ENABLED:
         print("--- Inizio Simulazione Steady-State ---")
@@ -124,12 +124,13 @@ def main():
 def run_steady_state_experiment():
     """
     Esegue entrambe le simulazioni a orizzonte infinito e genera i grafici di
-    confronto steady-state, suddividendo le richieste per tipo.
+    confronto steady-state.
     """
     print("\n--- AVVIO ESPERIMENTO STEADY-STATE A ORIZZONTE INFINITO ---")
 
     output_dir = "plots/steady_state"
 
+    # Usiamo un tasso di arrivo fisso per l'analisi, es. 70
     steady_lambda_fn = lambda t: 70
 
     # Creiamo i 3 generatori RNG necessari, usando il seed di base per riproducibilità
@@ -141,7 +142,6 @@ def run_steady_state_experiment():
     # --- ESECUZIONE BASELINE ---
     print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
     metrics_baseline = Metrics()
-
     simulator_baseline = Simulator(
         config_module=config,
         metrics=metrics_baseline,
@@ -155,7 +155,6 @@ def run_steady_state_experiment():
     # --- ESECUZIONE PRIORITÀ ---
     print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
     metrics_prio = MetricsWithPriority(config)
-
     simulator_prio = SimulatorWithPriority(
         config_module=config,
         metrics=metrics_prio,
@@ -166,21 +165,23 @@ def run_steady_state_experiment():
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-    # --- PLOTTING FINALE CONFRONTO ---
+    # --- ANALISI E PLOTTING FINALE ---
     print("\n--- Generazione Report Steady-State ---")
-    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
 
-    # Creiamo gli analizzatori da passare al plotter
+    # 1. Istanziamo gli oggetti necessari
     analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
     analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
+    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
 
-    # Chiamiamo la nuova funzione per le perdite per tipo
-    steady_plotter.plot_steady_state_loss_by_type_ci(analyzer_baseline, analyzer_prio, config.WARM_UP_TO_STEADY,
-                                                     config.NUM_BATCHES, output_dir)
+    # 2. Facciamo UN'UNICA chiamata al metodo orchestratore
+    steady_plotter.generate_steady_state_report(
+        analyzer_baseline=analyzer_baseline,
+        analyzer_prio=analyzer_prio,
+        warmup=config.WARM_UP_TO_STEADY,
+        batches=config.NUM_BATCHES,
+        output_dir=output_dir
+    )
 
-    # Possiamo ancora chiamare la funzione per i tempi
-    steady_plotter.plot_steady_state_times_by_type(analyzer_baseline, analyzer_prio, config.WARM_UP_TO_STEADY,
-                                                    config.NUM_BATCHES, output_dir)
     print("\n--- Fine dell'analisi Steady-State ---")
 
 

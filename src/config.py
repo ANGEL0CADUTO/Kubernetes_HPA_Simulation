@@ -115,9 +115,9 @@ class Priority(IntEnum):
 
 # --- Mappatura fissa da Tipo di Richiesta a Priorità ---
 REQUEST_TYPE_TO_PRIORITY = {
-    RequestType.LOGIN:       Priority.HIGH,     # Utente va servito subito
+    RequestType.LOGIN:       Priority.MEDIUM,     # Utente va servito subito
     RequestType.NAVIGATION:  Priority.HIGH,     # Delay qui uccide il funnel
     RequestType.ADD_TO_CART: Priority.MEDIUM,   # Intermedia
-    RequestType.CHECKOUT:    Priority.MEDIUM,      # Può aspettare qualche secondo
+    RequestType.CHECKOUT:    Priority.HIGH,      # Può aspettare qualche secondo
     RequestType.ANALYTICS:   Priority.LOW       # Background
 }
