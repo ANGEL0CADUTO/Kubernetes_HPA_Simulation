@@ -61,141 +61,108 @@ class SteadyStatePlotter:
         plt.savefig(save_path, dpi=300)
         plt.show()
 
-    def plot_steady_state_times_by_type(self, analyzer_baseline, analyzer_prio, warmup, batches, output_dir):
-        """
-        Crea un dashboard che confronta i tempi medi (risposta e attesa) per tipo di richiesta,
-        calcolati in steady-state con intervalli di confidenza.
-        AGGIORNATO con etichette di testo per media e C.I.
-        """
-        print("Generazione grafici C.I. per tempi per tipo di richiesta...")
+    # In src/steady_state_analysis/steady_state_plotter.py
+# Sostituisci il vecchio metodo con questo
 
-        fig, axes = plt.subplots(1, 2, figsize=(20, 8), sharey=True) # Leggermente più largo
-        fig.suptitle('Tempi Medi (Steady State) per Tipo con IC al 95%', fontsize=18)
+def plot_steady_state_times_by_type(self, analyzer_baseline, analyzer_prio, warmup, batches, output_dir):
+    """
+    Crea un dashboard che confronta i tempi medi (risposta e attesa) per tipo di richiesta,
+    calcolati in steady-state con intervalli di confidenza.
+    AGGIORNATO con migliore estetica e annotazioni.
+    """
+    print("Generazione grafici C.I. per tempi per tipo di richiesta...")
 
-        all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
-        category_names = [req.name.replace('_', ' ').title() for req in all_req_types]
+    # --- MODIFICA 1: Aumenta la dimensione della figura per risolvere il UserWarning ---
 
-        for metric_name, ax in zip(['response', 'wait'], axes):
-            plot_data = []
-            # ... (la logica di calcolo dei dati rimane la stessa) ...
-            for req_type in all_req_types:
-                raw_data_baseline = self.metrics.response_times_history[req_type] if metric_name == 'response' else self.metrics.wait_times_history[req_type]
-                ci_baseline = analyzer_baseline.calculate_batch_means_ci(raw_data_baseline, warmup, batches)
-                if ci_baseline:
-                    plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Tempo Medio (s)': ci_baseline['mean'],
-                                      'Errore': ci_baseline['half_width'], 'Scenario': 'Senza Priorità'})
-                raw_data_prio = self.metrics_prio.response_times_by_req_type[req_type] if metric_name == 'response' else self.metrics_prio.wait_times_by_req_type[req_type]
-                timestamps_prio = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
-                if len(timestamps_prio) == len(raw_data_prio):
-                    data_with_ts_prio = sorted(zip(timestamps_prio, raw_data_prio), key=lambda x: x[0])
-                    ci_prio = analyzer_prio.calculate_batch_means_ci(data_with_ts_prio, warmup, batches)
-                    if ci_prio:
-                        plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Tempo Medio (s)': ci_prio['mean'],
-                                          'Errore': ci_prio['half_width'], 'Scenario': 'Con Priorità'})
+    fig, axes = plt.subplots(1, 2, figsize=(22, 10), sharey=True)
+    fig.suptitle('Tempi Medi (Steady State) per Tipo con IC al 95%', fontsize=20, fontweight='bold')
 
-            if not plot_data: continue
-            df = pd.DataFrame(plot_data)
-            hue_order = ['Senza Priorità', 'Con Priorità']
-            palette = ['#ff0000', '#0000ff']
+    all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
+    category_names = [req.name.replace('_', ' ').title() for req in all_req_types]
 
-            sns.barplot(data=df, x='Categoria', y='Tempo Medio (s)', hue='Scenario',
-                        order=category_names, hue_order=hue_order, palette=palette, ax=ax)
+    for metric_name, ax in zip(['response', 'wait'], axes):
+        # La logica di raccolta dati è corretta e rimane invariata
+        plot_data = []
+        for req_type in all_req_types:
+            raw_data_baseline = self.metrics.response_times_history[req_type] if metric_name == 'response' else self.metrics.wait_times_history[req_type]
+            ci_baseline = analyzer_baseline.calculate_batch_means_ci(raw_data_baseline, warmup, batches)
+            if ci_baseline:
+                plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Tempo Medio (s)': ci_baseline['mean'], 'Errore': ci_baseline['half_width'], 'Scenario': 'Senza Priorità'})
 
-            num_categories = len(category_names)
-            x_positions = np.arange(num_categories)
-            width = 0.4
+            raw_data_prio = self.metrics_prio.response_times_by_req_type[req_type] if metric_name == 'response' else self.metrics_prio.wait_times_by_req_type[req_type]
+            timestamps_prio = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
+            if len(timestamps_prio) == len(raw_data_prio):
+                data_with_ts_prio = sorted(zip(timestamps_prio, raw_data_prio), key=lambda x: x[0])
+                ci_prio = analyzer_prio.calculate_batch_means_ci(data_with_ts_prio, warmup, batches)
+                if ci_prio:
+                    plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Tempo Medio (s)': ci_prio['mean'], 'Errore': ci_prio['half_width'], 'Scenario': 'Con Priorità'})
 
-            for i, scenario in enumerate(hue_order):
-                offset = -width / 2 if i == 0 else width / 2
-                subset = df[df['Scenario'] == scenario].set_index('Categoria').reindex(category_names)
+        if not plot_data: continue
 
-                # Aggiungi barre di errore
-                y_coords = subset['Tempo Medio (s)']
-                errors = subset['Errore']
-                ax.errorbar(x_positions + offset, y_coords, yerr=errors,
-                            fmt='none', c='black', capsize=4, elinewidth=1)
+        df = pd.DataFrame(plot_data)
+        hue_order = ['Senza Priorità', 'Con Priorità']
+        palette = ['#ff0000', '#0000ff']
 
-                # --- NUOVA SEZIONE: Aggiunta etichette di testo ---
-                for k, (cat, row) in enumerate(subset.iterrows()):
-                    mean_val = row['Tempo Medio (s)']
-                    error_val = row['Errore']
+        # --- MODIFICA 2: Aggiungi "dodge=True" per distanziare le barre ---
+        # Questo, combinato a un'immagine più larga, rende le barre più spesse.
+        sns.barplot(data=df, x='Categoria', y='Tempo Medio (s)', hue='Scenario',
+                    order=category_names, hue_order=hue_order, palette=palette, ax=ax, dodge=True)
 
-                    # Posiziona il testo della media
-                    ax.text(x_positions[k] + offset, mean_val / 2, f'{mean_val:.3f}', # Posiziona la media a metà della barra
-                            ha='center', va='center', color='white', fontsize=8, weight='bold')
+        num_categories = len(category_names)
+        x_positions = np.arange(num_categories)
+        width = 0.4
 
-                    # Posiziona il testo dell'intervallo di confidenza
-                    upper_bound = mean_val + error_val
-                    ci_text = f"[{max(0, mean_val - error_val):.3f}, {upper_bound:.3f}]"
-                    ax.text(x_positions[k] + offset, upper_bound, ci_text,
-                            ha='center', va='bottom', fontsize=7, color='black')
-                # ----------------------------------------------------
+        # Itera per aggiungere barre di errore e annotazioni
+        for i, scenario in enumerate(hue_order):
+            offset = -width / 2 if i == 0 else width / 2
+            subset = df[df['Scenario'] == scenario].set_index('Categoria').reindex(category_names)
 
-            title_str = f"Tempo di {'Risposta' if metric_name == 'response' else 'Attesa'} Medio"
-            ax.set_title(title_str)
-            ax.set_xlabel('')
-            ax.set_ylabel('Tempo Medio (s)')
-            plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-            ax.legend(title='Scenario').remove()
+            y_coords = subset['Tempo Medio (s)']
+            errors = subset['Errore']
+            ax.errorbar(x_positions + offset, y_coords, yerr=errors,
+                        fmt='none', c='black', capsize=5, elinewidth=1.2)
 
-            # Aumenta dinamicamente lo spazio superiore per far posto al testo
-            max_y_lim = (df['Tempo Medio (s)'] + df['Errore']).max()
-            ax.set_ylim(top=max_y_lim * 1.2)
+            for k, (cat, row) in enumerate(subset.iterrows()):
+                mean_val = row['Tempo Medio (s)']
+                error_val = row['Errore']
 
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper right', title='Scenario')
+                # Testo della media, con font ridotto per entrare meglio nella barra
+                ax.text(x_positions[k] + offset, mean_val / 2, f'{mean_val:.3f}',
+                        ha='center', va='center', color='white', fontsize=7.5, weight='bold')
 
-        plt.tight_layout(rect=(0.03, 0.03, 1, 0.96)) # Tupla, non lista
-        os.makedirs(output_dir, exist_ok=True)
-        save_path = os.path.join(output_dir, "steady_state_times_comparison_annotated.png")
-        plt.savefig(save_path, dpi=300)
-        plt.show()
+                # Testo dell'intervallo di confidenza
+                upper_bound = mean_val + error_val
+                ci_text = f"[{max(0, mean_val - error_val):.3f}, {upper_bound:.3f}]"
 
-    # questo grafico non mi sembra rilevante, lo laascio per sicurezza
-    # def plot_steady_state_loss_by_type_ci(self, analyzer_baseline, analyzer_prio, warmup, batches, output_dir):
-    #     """AGGIORNATO con scala logaritmica."""
-    #     print("Generazione grafico C.I. per probabilità di perdita per tipo...")
-    #     fig, ax = plt.subplots(1, 1, figsize=(14, 8))
-    #     fig.suptitle('Probabilità di Perdita (Steady State) per Tipo con IC al 95%', fontsize=16)
-    #
-    #     # ... (tutta la logica di calcolo dei dati rimane invariata) ...
-    #     all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
-    #     category_names = [req.name.replace('_', ' ').title() for req in all_req_types]
-    #     plot_data = []
-    #     for req_type in all_req_types:
-    #         stream_baseline = self.metrics.get_outcomes_by_type_as_binary_stream(req_type)
-    #         ci_baseline = analyzer_baseline.calculate_batch_means_ci(stream_baseline, warmup, batches)
-    #         if ci_baseline: plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Probabilità di Perdita': ci_baseline['mean'], 'Errore': ci_baseline['half_width'], 'Scenario': 'Senza Priorità'})
-    #         stream_prio = self.metrics_prio.get_outcomes_by_type_as_binary_stream(req_type)
-    #         ci_prio = analyzer_prio.calculate_batch_means_ci(stream_prio, warmup, batches)
-    #         if ci_prio: plot_data.append({'Categoria': req_type.name.replace('_', ' ').title(), 'Probabilità di Perdita': ci_prio['mean'], 'Errore': ci_prio['half_width'], 'Scenario': 'Con Priorità'})
-    #
-    #     if not plot_data: return
-    #     df = pd.DataFrame(plot_data)
-    #     hue_order = ['Senza Priorità', 'Con Priorità']
-    #     palette = ['#ff0000', '#0000ff']
-    #     sns.barplot(data=df, x='Categoria', y='Probabilità di Perdita', hue='Scenario', order=category_names, hue_order=hue_order, palette=palette, ax=ax)
-    #
-    #     # ... (la logica per le barre di errore e le annotazioni rimane invariata) ...
-    #
-    #     # ####################################################################
-    #     # ## MODIFICA 3.2: SCALA LOGARITMICA PER LA PROBABILITÀ DI PERDITA  ##
-    #     # ####################################################################
-    #     # Commenta/Decommenta questa riga per attivare/disattivare la scala logaritmica.
-    #     ax.set_yscale('log')
-    #     # Impostiamo un limite inferiore per gestire i valori molto vicini (o uguali) a zero
-    #     ax.set_ylim(bottom=1e-5) # es. 0.00001
-    #     # ####################################################################
-    #
-    #     ax.set_xlabel('Tipo di Richiesta')
-    #     ax.set_ylabel('Probabilità di Perdita Stimata (Scala Log)')
-    #     # ... (resto della logica estetica) ...
-    #
-    #     plt.tight_layout(rect=(0, 0, 1, 0.96))
-    #     os.makedirs(output_dir, exist_ok=True)
-    #     save_path = os.path.join(output_dir, "steady_state_loss_by_type_ci_log.png") # Nome file diverso
-    #     plt.savefig(save_path, dpi=300)
-    #     plt.show()
+                # --- MODIFICA 3: Distanzia il testo dalla barra di errore ---
+                # Aggiungiamo un piccolo padding verticale dinamico
+                padding = ax.get_ylim()[1] * 0.02 # 2% dell'altezza dell'asse
+                ax.text(x_positions[k] + offset, upper_bound + padding, ci_text,
+                        ha='center', va='center', fontsize=7, color='black')
+
+        # Estetica del grafico
+        title_str = f"Tempo di {'Risposta' if metric_name == 'response' else 'Attesa'} Medio"
+        ax.set_title(title_str, fontsize=16)
+        ax.set_xlabel('')
+        ax.set_ylabel('Tempo Medio (s)', fontsize=12)
+        plt.setp(ax.get_xticklabels(), rotation=40, ha="right", rotation_mode="anchor")
+        ax.legend(title='Scenario').remove()
+
+        # --- MODIFICA 4: "Schiaccia" le barre assicurando spazio per il testo ---
+        max_y_lim = (df['Tempo Medio (s)'] + df['Errore']).max()
+        ax.set_ylim(top=max_y_lim * 1.35) # Aumentato al 35% di margine per il testo
+
+    # Gestione legenda e layout finale
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper right', title='Scenario', fontsize=12)
+
+    # Il rect è una tupla, non una lista. La dimensione maggiore della figura ora
+    # dovrebbe prevenire il warning.
+    plt.tight_layout(rect=(0.03, 0.03, 1, 0.95))
+    os.makedirs(output_dir, exist_ok=True)
+    save_path = os.path.join(output_dir, "steady_state_times_comparison_annotated.png")
+    plt.savefig(save_path, dpi=300)
+    plt.show()
 
     def plot_convergence_prio_by_type(self, output_dir="plots/transient_analysis"):
         """
