@@ -47,7 +47,7 @@ class SteadyStateAnalyzer:
 
         # 3. Calcolo della media generale e della varianza campionaria delle medie dei batch
         grand_mean = np.mean(batch_means)
-        sample_variance = np.var(batch_means, ddof=1) # ddof=1 per varianza campionaria (diviso per k-1)
+        sample_variance = np.var(batch_means, ddof=1)   # ddof=1 per varianza campionaria (diviso per k-1)
 
         # 4. Calcolo dell'intervallo di confidenza
         degrees_freedom = num_batches - 1
@@ -100,3 +100,60 @@ class SteadyStateAnalyzer:
         os.makedirs(output_dir, exist_ok=True)
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    def calculate_throughput_ci(self, completion_timestamps, warmup_period, num_batches, confidence_level=0.95):
+        """
+        Calcola il throughput medio (eventi/sec) e il suo intervallo di confidenza
+        utilizzando il metodo Batch Means su una serie di timestamp di eventi.
+        """
+        # 1. Filtra i dati per rimuovere il transitorio
+        steady_state_timestamps = [t for t in completion_timestamps if t >= warmup_period]
+
+        if not steady_state_timestamps:
+            print("Warning: Nessun dato in steady-state per calcolare il throughput.")
+            return None
+
+        # 2. Definisci l'intervallo di tempo dell'analisi steady-state
+        start_time = warmup_period
+        end_time = steady_state_timestamps[-1]
+        total_duration = end_time - start_time
+
+        if total_duration <= 0:
+            print("Warning: Durata steady-state non positiva.")
+            return None
+
+        # 3. Dividi la DURATA in batch e calcola i tassi dei batch
+        batch_duration = total_duration / num_batches
+        batch_throughputs = []
+        for i in range(num_batches):
+            batch_start = start_time + i * batch_duration
+            batch_end = batch_start + batch_duration
+
+            # Conta quanti eventi sono caduti in questo intervallo di tempo
+            events_in_batch = sum(1 for t in steady_state_timestamps if batch_start <= t < batch_end)
+
+            # Calcola il tasso per questo batch (eventi / secondi)
+            batch_rate = events_in_batch / batch_duration
+            batch_throughputs.append(batch_rate)
+
+        # 4. Usa la logica Batch Means esistente sui tassi calcolati
+        grand_mean_throughput = np.mean(batch_throughputs)
+        sample_variance = np.var(batch_throughputs, ddof=1)
+
+        degrees_freedom = num_batches - 1
+        if degrees_freedom <= 0: return None # Non si può calcolare se c'è < 2 batch
+
+        t_value = t.ppf((1 + confidence_level) / 2, df=degrees_freedom)
+
+        half_width = t_value * np.sqrt(sample_variance / num_batches)
+
+        ci_lower = grand_mean_throughput - half_width
+        ci_upper = grand_mean_throughput + half_width
+
+        return {
+            'mean': grand_mean_throughput,
+            'ci': (ci_lower, ci_upper),
+            'half_width': half_width,
+            # Aggiungiamo anche il conteggio totale per le etichette
+            'total_count': len(steady_state_timestamps)
+        }
