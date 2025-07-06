@@ -220,3 +220,14 @@ class MetricsWithPriority:
         all_outcomes = serviced + timed_out
         all_outcomes.sort(key=lambda x: x[0])
         return all_outcomes
+    def get_cumulative_timeouts(self):
+
+        if not self.timeout_history:
+            return [], []
+
+        sorted_timeouts = sorted(self.timeout_history, key=lambda x: x[0])
+
+        timestamps = [t for t, r in sorted_timeouts]
+        cumulative_counts = np.arange(1, len(timestamps) + 1)
+
+        return timestamps, cumulative_counts

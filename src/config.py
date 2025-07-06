@@ -3,7 +3,7 @@ from enum import Enum
 from enum import IntEnum
 
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
-SIMULATION_TIME = 1000      # Tempo totale di simulazione (in secondi)
+SIMULATION_TIME = 3600    # Tempo totale di simulazione (in secondi)
 LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 
 # --- ANALISI ORIZZONTE INFINITO ---
@@ -11,7 +11,7 @@ WARM_UP_TO_STEADY = 300         # tempo per raggiungere il comportamento transit
 STEADY_SIMULATION_TIME = 30000
 NUM_BATCHES = 20                # Un numero medio
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = True            # Per comodità la attiviamo solo quando necessario perché molto lunga
+STEADY_ENABLED = False            # Per comodità la attiviamo solo quando necessario perché molto lunga
 
 # --- CONFIGURAZIONE DEL WORKER E DEI POD ---
 # Concettualmente abbiamo un solo worker node.

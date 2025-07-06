@@ -8,11 +8,11 @@ class Metrics:
     Classe per raccogliere e calcolare le metriche di performance durante la simulazione.
     """
 
-    def __init__(self):
+    def __init__(self,config_module):
         # Le liste ora conterranno tuple (timestamp, valore) per i grafici temporali
         self.response_times_history = defaultdict(list)
         self.wait_times_history = defaultdict(list)
-
+        self.config = config_module
         # Le liste semplici sono ancora utili per calcolare le medie finali e gli istogrammi
         self.response_times_data = defaultdict(list)
         self.wait_times_data = defaultdict(list)
@@ -153,3 +153,14 @@ class Metrics:
         all_outcomes = serviced + timed_out
         all_outcomes.sort(key=lambda x: x[0])
         return all_outcomes
+
+    def get_cumulative_timeouts(self):
+        if not self.timeout_history:
+            return [], []
+
+        sorted_timeouts = sorted(self.timeout_history, key=lambda x: x[0])
+
+        timestamps = [t for t, r in sorted_timeouts]
+        cumulative_counts = np.arange(1, len(timestamps) + 1)
+
+        return timestamps, cumulative_counts

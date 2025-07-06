@@ -8,6 +8,7 @@ from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
 from analysis.data_report import export_summary
 from analysis.data_report import *
+from analysis.validation_plotter import  ValidationPlotter
 from analysis.plotter import Plotter
 from src.simulation.simulator import Simulator
 from src.utils.metrics_with_priority import MetricsWithPriority
@@ -20,99 +21,80 @@ label2 = "Con Priorità"
 
 #tassi di arrivo dinamici
 tassi_costanti=[70,85,89] # stabile, vicino l'instabilità e instabile si posso modificare
-
 def main():
     """
-    Funzione principale che orchestra l'intero processo,
-    eseguendo le simulazioni per diversi tassi di arrivo.
+    Funzione principale che orchestra l'intero processo.
     """
     print("--- Inizio Progetto di Simulazione E-commerce ---")
 
-    # Definiamo i tassi di arrivo da testare
-    # Puoi aggiungere funzioni lambda più complesse qui se vuoi
     arrival_scenarios = {
         "tasso_70": lambda t: 70,
         "tasso_85": lambda t: 85,
-        "tasso_89": lambda t: 100,
-        # Esempio di tasso variabile:
-        # "ciclo_giornaliero": lambda t: 50 + 40 * np.sin(2 * np.pi * t / (config.SIMULATION_TIME / 2))
+        "tasso_100": lambda t: 100,
     }
 
+    # Dizionario per raccogliere i risultati di tutte le run
+    all_run_metrics = {}
 
-    # Il generatore Lehmer ci fornisce una base di seed riproducibile
     lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
 
-    # # Eseguiamo un ciclo per ogni scenario di tasso di arrivo
-    # for scenario_name, lambda_fn in arrival_scenarios.items():
-    #     print(f"\n{'='*20} ESECUZIONE SCENARIO: {scenario_name.upper()} {'='*20}")
-    #
-    #     # Generiamo un set di seed UNICO per questo scenario, ma derivato dal Lehmer
-    #     # per garantire che se rieseguiamo tutto, i risultati siano identici.
-    #     # Chiamiamo _next_seed() per assicurarci che ogni ciclo for abbia seed diversi.
-    #     lehmer_rng._next_seed()
-    #     base_seed_for_scenario = lehmer_rng._next_seed()
-    #
-    #     # Da questo singolo seed di scenario, deriviamo i 3 seed per i nostri RNG
-    #     scenario_rng_gen = LehmerRNG(seed=base_seed_for_scenario)
-    #     seeds = scenario_rng_gen.get_numpy_seeds(count=3)
-    #     arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
-    #
-    #     # --- ESECUZIONE BASELINE (per questo tasso di arrivo) ---
-    #     print(f"\n--- {scenario_name}: SCENARIO BASELINE (FIFO) ---")
-    #     metrics = Metrics()
-    #
-    #     arrival_rng_base = np.random.default_rng(seed=arrival_seed)
-    #     choice_rng_base = np.random.default_rng(seed=choice_seed)
-    #     service_rng_base = np.random.default_rng(seed=service_seed)
-    #
-    #     simulator = Simulator(
-    #         config_module=config,
-    #         metrics=metrics,
-    #         arrival_rng=arrival_rng_base,
-    #         choice_rng=choice_rng_base,
-    #         service_rng=service_rng_base,
-    #         lambda_function=lambda_fn  # Passiamo la funzione lambda
-    #     )
-    #     simulator.run(simulation_duration=config.SIMULATION_TIME)
-    #     metrics.print_summary()
-    #     print("\n--- Esecuzione baseline terminata ---")
-    #
-    #     # --- ESECUZIONE MIGLIORATA (per questo tasso di arrivo) ---
-    #     print(f"\n--- {scenario_name}: SCENARIO MIGLIORATO (PRIORITY) ---")
-    #     metrics_prio = MetricsWithPriority(config)
-    #
-    #     arrival_rng_prio = np.random.default_rng(seed=arrival_seed)
-    #     choice_rng_prio = np.random.default_rng(seed=choice_seed)
-    #     service_rng_prio = np.random.default_rng(seed=service_seed)
-    #
-    #     simulator_prio = SimulatorWithPriority(
-    #         config_module=config,
-    #         metrics=metrics_prio,
-    #         arrival_rng=arrival_rng_prio,
-    #         choice_rng=choice_rng_prio,
-    #         service_rng=service_rng_prio,
-    #         lambda_function=lambda_fn # Passiamo la stessa funzione lambda
-    #     )
-    #     simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
-    #     metrics_prio.print_summary()
-    #     print("\n--- Esecuzione migliorativa terminata ---")
-    #
-    #     # --- ANALISI DEI RISULTATI (per questo tasso di arrivo) ---
-    #     print(f"\n--- Generazione report per lo scenario: {scenario_name} ---")
-    #
-    #     # Creiamo una cartella di output specifica per questo scenario
-    #     output_folder = f"output/plots_{scenario_name}"
-    #     os.makedirs(output_folder, exist_ok=True)
-    #
-    #     # Esportiamo i dati
-    #     export_summary(metrics_prio, output_dir=output_folder, label=f"{scenario_name}_con_priorita", by_priority=True)
-    #     export_summary(metrics, output_dir=output_folder, label=f"{scenario_name}_senza_priorita", by_priority=False)
-    #
-    #     # Generiamo i grafici salvandoli nella cartella dedicata
-    #     plotter = Plotter(metrics, metrics_prio, config)
-    #     plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
+    # --- DECOMMENTA IL CICLO ---
+    for scenario_name, lambda_fn in arrival_scenarios.items():
+        print(f"\n{'='*20} ESECUZIONE SCENARIO: {scenario_name.upper()} {'='*20}")
 
-    # Modificare il flag nel file di configurazione per attivare/disattivare simulazione a orizzonte infinito
+        lehmer_rng._next_seed()
+        base_seed_for_scenario = lehmer_rng._next_seed()
+        scenario_rng_gen = LehmerRNG(seed=base_seed_for_scenario)
+        seeds = scenario_rng_gen.get_numpy_seeds(count=3)
+        arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
+
+        # --- ESECUZIONE BASELINE ---
+        print(f"\n--- {scenario_name}: SCENARIO BASELINE (FIFO) ---")
+        metrics_base = Metrics(config_module=config)
+        arrival_rng_base = np.random.default_rng(seed=arrival_seed)
+        choice_rng_base = np.random.default_rng(seed=choice_seed)
+        service_rng_base = np.random.default_rng(seed=service_seed)
+        simulator_base = Simulator(
+            config_module=config, metrics=metrics_base, arrival_rng=arrival_rng_base,
+            choice_rng=choice_rng_base, service_rng=service_rng_base, lambda_function=lambda_fn
+        )
+        simulator_base.run(simulation_duration=config.SIMULATION_TIME)
+        metrics_base.print_summary()
+        print("\n--- Esecuzione baseline terminata ---")
+
+        # --- ESECUZIONE MIGLIORATA ---
+        print(f"\n--- {scenario_name}: SCENARIO MIGLIORATO (PRIORITY) ---")
+        metrics_prio = MetricsWithPriority(config)
+        arrival_rng_prio = np.random.default_rng(seed=arrival_seed)
+        choice_rng_prio = np.random.default_rng(seed=choice_seed)
+        service_rng_prio = np.random.default_rng(seed=service_seed)
+        simulator_prio = SimulatorWithPriority(
+            config_module=config, metrics=metrics_prio, arrival_rng=arrival_rng_prio,
+            choice_rng=choice_rng_prio, service_rng=service_rng_prio, lambda_function=lambda_fn
+        )
+        simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
+        metrics_prio.print_summary()
+        print("\n--- Esecuzione migliorativa terminata ---")
+
+        # --- ANALISI DEI RISULTATI per questo scenario ---
+        print(f"\n--- Generazione report per lo scenario: {scenario_name} ---")
+        output_folder = f"output/plots_{scenario_name}"
+        os.makedirs(output_folder, exist_ok=True)
+        #export_summary(metrics_prio, output_dir=output_folder, label=f"{scenario_name}_con_priorita", by_priority=True)
+        #export_summary(metrics_base, output_dir=output_folder, label=f"{scenario_name}_senza_priorita", by_priority=False)
+        plotter = Plotter(metrics_base, metrics_prio, config)
+        plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
+
+        # --- AGGIUNTA: SALVA I RISULTATI PER L'ANALISI FINALE ---
+        all_run_metrics[scenario_name] = {'baseline': metrics_base, 'priority': metrics_prio}
+        # --------------------------------------------------------
+
+    # --- NUOVA SEZIONE: ANALISI DI VALIDAZIONE GLOBALE ---
+    if all_run_metrics:
+        validation_plotter = ValidationPlotter(all_run_metrics, config)
+        validation_plotter.generate_validation_report()
+    # ---------------------------------------------------
+
     if config.STEADY_ENABLED:
         print("--- Inizio Simulazione Steady-State ---")
         run_steady_state_experiment()
