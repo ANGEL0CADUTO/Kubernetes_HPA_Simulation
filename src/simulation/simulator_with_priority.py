@@ -1,4 +1,4 @@
-# src/simulation/simulator_with_priority.py - VERSIONE FINALE CON CRISTALLIZZAZIONE
+
 
 import simpy
 from simpy.resources.store import PriorityStore, PriorityItem
@@ -70,31 +70,41 @@ class SimulatorWithPriority:
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Avviato.")
         while True:
             try:
+                # Estrae una richiesta dalla coda (di priorità) in modo asincrono
                 priority_item = yield self.request_queue.get()
+
+                # Estrae l'oggetto richiesta dall'elemento di priorità
                 request = priority_item.item
+
+                # Marca la richiesta come "servita" (utile per tracciarne lo stato)
                 request.is_serviced = True
 
+                # Se la richiesta è già scaduta, la scarta e passa alla prossima
                 if request.timed_out:
                     print(f"{self.env.now:.2f} [Pod {pod_id}]: Scartata richiesta {request.request_id} perché già scaduta.")
                     continue
 
+                # Calcola il tempo di attesa prima che la richiesta sia servita
                 arrival_in_service = self.env.now
                 wait_time = arrival_in_service - request.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento rich. {request.request_id} (Priorità: {request.priority.name}). Attesa: {wait_time:.4f}s")
 
-                # --- MODIFICA CHIAVE: USARE IL VALORE CRISTALLIZZATO ---
+                # Simula il tempo di servizio della richiesta
                 yield self.env.timeout(request.service_time)
 
+                # Calcola il tempo di risposta totale della richiesta
                 completion_time = self.env.now
                 response_time = completion_time - request.arrival_time
                 print(f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento rich. {request.request_id}. Tempo di risposta: {response_time:.4f}s")
+
+                # Registra le metriche della richiesta (es. per analisi/statistiche)
                 self.metrics.record_request_metrics(completion_time, request, response_time, wait_time)
 
             except simpy.Interrupt:
                 break
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Ricevuto segnale di stop, terminazione.")
 
-    # ... [Il resto della classe (metrics_recorder, scale_to, etc.) rimane invariato] ...
+
     def metrics_recorder(self):
         while True:
             queue_lengths_per_prio = defaultdict(int)

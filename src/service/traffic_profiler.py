@@ -54,7 +54,6 @@ class DynamicTrafficProfiler:
         return req_types, req_probs
 
 
-    # ... (altre parti della classe) ...
 
     def _calculate_health_factor(self, req_type: RequestType) -> float:
         # Ora possiamo usare una logica unificata
@@ -65,9 +64,7 @@ class DynamicTrafficProfiler:
             generated_count = self.metrics.requests_generated_data.get(req_type, 0)
             timed_out_count = self.metrics.requests_timed_out_data.get(req_type, 0)
 
-        # --- DE-INDENTA QUESTA PARTE ---
-        # Questa logica deve essere eseguita per entrambi gli scenari,
-        # non solo per la baseline.
+
         if generated_count < self.min_data_threshold:
             return 1.0
 

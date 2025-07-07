@@ -40,7 +40,7 @@ class Simulator:
             req_types, req_probs = self.traffic_profiler.get_current_probabilities()
             chosen_type = self.choice_rng.choice(req_types, p=req_probs)
 
-            # --- MODIFICA CHIAVE: CRISTALLIZZAZIONE DEL TEMPO DI SERVIZIO ---
+
             # Il tempo di servizio viene calcolato QUI e salvato nella richiesta.
             # Questa è l'unica chiamata a service_rng, isolandola.
             service_time = self.service.get_service_time(chosen_type)
@@ -64,37 +64,48 @@ class Simulator:
             self.request_queue.put(new_request)
 
     def pod_worker(self, pod_id):
+        # Stampa che il pod è stato avviato, mostrando il tempo corrente nella simulazione
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Avviato.")
+
         while True:
             try:
+                # Estrae una richiesta dalla coda (FIFO, non con priorità) in maniera asincrona
                 request = yield self.request_queue.get()
+
+                # Marca la richiesta come "in servizio", utile per evitare che venga servita più volte
                 request.is_serviced = True
 
+                # Verifica se la richiesta è scaduta prima di essere servita (timeout)
                 if request.timed_out:
                     print(f"{self.env.now:.2f} [Pod {pod_id}]: Scartata richiesta {request.request_id} perché già scaduta.")
-                    continue
+                    continue  # Salta alla prossima iterazione, non processa la richiesta
 
+                # Registra il tempo in cui inizia il servizio
                 arrival_in_service = self.env.now
+                # Calcola il tempo di attesa trascorso nella coda
                 wait_time = arrival_in_service - request.arrival_time
-                print(
-                    f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento richiesta {request.request_id}. Attesa: {wait_time:.4f}s")
 
-                # --- MODIFICA CHIAVE: USARE IL VALORE CRISTALLIZZATO ---
-                # Il pod_worker non calcola più nulla, legge solo il valore.
+                print(f"{self.env.now:.2f} [Pod {pod_id}]: Inizio processamento richiesta {request.request_id}. Attesa: {wait_time:.4f}s")
+
+                # Simula il tempo di servizio richiesto, bloccando il pod per quella durata
                 yield self.env.timeout(request.service_time)
 
+                # Calcola il tempo totale di risposta (da arrivo a completamento)
                 completion_time = self.env.now
                 response_time = completion_time - request.arrival_time
-                print(
-                    f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento richiesta {request.request_id}. Tempo di risposta: {response_time:.4f}s")
 
+                # Stampa il completamento del servizio e il tempo di risposta totale
+                print(f"{self.env.now:.2f} [Pod {pod_id}]: Fine processamento richiesta {request.request_id}. Tempo di risposta: {response_time:.4f}s")
+
+                # Registra le metriche della richiesta (tipo, tempo di risposta, attesa, ecc.)
                 self.metrics.record_request_metrics(completion_time, request.req_type, response_time, wait_time)
 
             except simpy.Interrupt:
                 break
+
         print(f"{self.env.now:.2f} [Pod {pod_id}]: Rilevato segnale di stop, terminazione.")
 
-    # ... [Il resto della classe (metrics_recorder, scale_to, etc.) rimane invariato] ...
+
     def metrics_recorder(self):
         while True:
             queue_len = len(self.request_queue.items)

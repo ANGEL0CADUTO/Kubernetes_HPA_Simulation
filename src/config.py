@@ -3,15 +3,15 @@ from enum import Enum
 from enum import IntEnum
 
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
-SIMULATION_TIME = 3600    # Tempo totale di simulazione (in secondi)
+SIMULATION_TIME = 30000   # Tempo totale di simulazione (in secondi)
 LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 
 # --- ANALISI ORIZZONTE INFINITO ---
-WARM_UP_TO_STEADY = 300         # tempo per raggiungere il comportamento transitorio
-STEADY_SIMULATION_TIME = 30000
+WARM_UP_TO_STEADY = 2500        # tempo per raggiungere il comportamento transitorio
+STEADY_SIMULATION_TIME = 10000
 NUM_BATCHES = 20                # Un numero medio
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = False            # Per comodità la attiviamo solo quando necessario perché molto lunga
+STEADY_ENABLED = True           # Per comodità la attiviamo solo quando necessario perché molto lunga
 
 # --- CONFIGURAZIONE DEL WORKER E DEI POD ---
 # Concettualmente abbiamo un solo worker node.
@@ -93,7 +93,7 @@ REQUEST_TIMEOUTS = {
     RequestType.LOGIN: 1.0,
     RequestType.NAVIGATION: 1.0,
     RequestType.ADD_TO_CART: 3.0,
-    RequestType.CHECKOUT: 10.0,  # L'utente è più paziente durante il checkout
+    RequestType.CHECKOUT: 7.0,  # L'utente è più paziente durante il checkout
     RequestType.ANALYTICS: 5.0   # Richiesta interna, può essere scartata
 }
 

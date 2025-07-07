@@ -14,64 +14,51 @@ class SteadyStateAnalyzer:
         self.metrics = metrics
         self.config = config
 
+    def calculate_lag1_autocorrelation(self, batch_means):
+        """
+        Calcola la lag-1 autocorrelazione di una serie di medie di batch.
+        """
+        k = len(batch_means)
+        if k < 2: return 0.0
+        mean_of_means = np.mean(batch_means)
+        covariance = sum((batch_means[j] - mean_of_means) * (batch_means[j-1] - mean_of_means) for j in range(1, k)) / (k - 1)
+        variance = np.var(batch_means, ddof=0)
+        return covariance / variance if variance != 0 else 0.0
+
     def calculate_batch_means_ci(self, metric_data, warmup_period, num_batches, confidence_level=0.95):
         """
-        Calcola la media puntuale e l'intervallo di confidenza per una serie di dati
-        utilizzando il metodo Batch Means.
-
-        Args:
-            metric_data (list): Lista di tuple (timestamp, valore).
-            warmup_period (float): Durata del transitorio da scartare.
-            num_batches (int): Numero di batch in cui dividere i dati.
-            confidence_level (float): Livello di confidenza desiderato (es. 0.95 per 95%).
-
-        Returns:
-            dict: Un dizionario con media, intervallo di confidenza e semi-ampiezza, o None se i dati non sono sufficienti.
+        Calcola la media puntuale, l'IC e l'autocorrelazione.
         """
-        # 1. Rimozione del transitorio (Warm-up)
+        if not metric_data: return None
         steady_state_values = [value for timestamp, value in metric_data if timestamp >= warmup_period]
-
         n = len(steady_state_values)
-        if n < num_batches:
-            print(f"Errore: Dati insufficienti per creare {num_batches} batch. Osservazioni disponibili: {n}")
-            return None
+        if n < num_batches: return None
 
-        # 2. Creazione dei Batch e calcolo delle medie dei batch
         batch_size = n // num_batches
-        batch_means = []
-        for i in range(num_batches):
-            start_index = i * batch_size
-            end_index = start_index + batch_size
-            batch = steady_state_values[start_index:end_index]
-            batch_means.append(np.mean(batch))
+        if batch_size == 0: return None
 
-        # 3. Calcolo della media generale e della varianza campionaria delle medie dei batch
+        batch_means = [np.mean(steady_state_values[i*batch_size:(i+1)*batch_size]) for i in range(num_batches)]
+
+        if len(batch_means) < 2: return None
+
+        # Calcolo dell'autocorrelazione
+        lag1_autocorr = self.calculate_lag1_autocorrelation(batch_means)
+
+        # Calcolo dell'intervallo di confidenza
         grand_mean = np.mean(batch_means)
-        sample_variance = np.var(batch_means, ddof=1)   # ddof=1 per varianza campionaria (diviso per k-1)
-
-        # 4. Calcolo dell'intervallo di confidenza
-        degrees_freedom = num_batches - 1
+        sample_variance = np.var(batch_means, ddof=1)
+        degrees_freedom = len(batch_means) - 1
         t_value = t.ppf((1 + confidence_level) / 2, df=degrees_freedom)
-
-        half_width = t_value * np.sqrt(sample_variance / num_batches)
-
-        ci_lower = grand_mean - half_width
-        ci_upper = grand_mean + half_width
+        half_width = t_value * np.sqrt(sample_variance / len(batch_means))
 
         return {
             'mean': grand_mean,
-            'ci': (ci_lower, ci_upper),
+            'ci': (grand_mean - half_width, grand_mean + half_width),
             'half_width': half_width,
             'confidence_level': confidence_level,
-            'num_batches': num_batches
+            'num_batches': len(batch_means),
+            'lag1_autocorrelation': lag1_autocorr # <-- AGGIUNTO!
         }
-
-    def print_ci_results(self, results, metric_name):
-        """Stampa i risultati dell'analisi CI in modo leggibile."""
-        print(f"Risultati Batch Means per '{metric_name}':")
-        print(f"  - Stima Puntuale della Media: {results['mean']:.4f}")
-        print(f"  - Intervallo di Confidenza al {results['confidence_level']:.0%}: ({results['ci'][0]:.4f}, {results['ci'][1]:.4f})")
-        print(f"  - Semi-Ampiezza (Half-Width): {results['half_width']:.4f}")
 
     def plot_confidence_interval(self, results, title, output_dir, filename):
         """Crea un grafico che visualizza la media e il suo intervallo di confidenza."""
@@ -157,3 +144,24 @@ class SteadyStateAnalyzer:
             # Aggiungiamo anche il conteggio totale per le etichette
             'total_count': len(steady_state_timestamps)
         }
+
+    def print_ci_results(self, results, metric_name):
+        """Stampa i risultati dell'analisi CI in modo leggibile."""
+
+        if not results:
+            print(f"Nessun risultato valido da stampare per '{metric_name}'.")
+            return # Il return va DENTRO l'if.
+
+        # Se i risultati esistono, il codice prosegue e stampa tutto.
+        print(f"Risultati Batch Means per '{metric_name}':")
+        print(f"  - Stima Puntuale della Media: {results['mean']:.4f}")
+        print(f"  - Intervallo di Confidenza al {results['confidence_level']:.0%}: ({results['ci'][0]:.4f}, {results['ci'][1]:.4f})")
+
+        if 'lag1_autocorrelation' in results:
+            autocorr_val = results['lag1_autocorrelation']
+            print(f"  - Lag-1 Autocorrelazione tra Batch: {autocorr_val:.4f}")
+            if abs(autocorr_val) > 0.2:
+                print("    -> ATTENZIONE: Autocorrelazione > 0.2. I batch potrebbero non essere sufficientemente indipendenti.")
+
+
+

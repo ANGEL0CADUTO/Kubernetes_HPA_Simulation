@@ -35,8 +35,7 @@ class HPA:
             else:
                 desired_replicas_raw = num_active_pods
 
-            # --- MODIFICA CHIAVE: Applica la politica di stabilità (limita la velocità) ---
-            # Limita il numero di pod da aggiungere/rimuovere in un singolo step.
+
             if desired_replicas_raw > num_active_pods:
                 # Se vogliamo fare scale-up, non superare il massimo step consentito
                 limited_step = num_active_pods + self.config.MAX_SCALE_STEP

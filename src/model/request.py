@@ -17,14 +17,12 @@ class Request:
     """
     request_id: int
     req_type: RequestType
-    arrival_time: float
+    arrival_time: float #
     timeout: float
-    is_serviced = False  # Flag per sapere se un pod l'ha presa in carico
-    timed_out = False    # Flag che verrà attivato dal watcher
+    is_serviced = False
+    timed_out = False
     service_time: float
 
-# --- CLASSE DERIVATA (PER IL MIGLIORAMENTO) ---
-# Usiamo l'ereditarietà. PriorityRequest ha tutti i campi di Request più i suoi campi specifici.
 @dataclass
 class PriorityRequest(Request):
     """

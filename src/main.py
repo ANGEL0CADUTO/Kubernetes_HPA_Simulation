@@ -19,8 +19,6 @@ csv2 = "output/prioritized_summary.csv",
 label1 = "Senza Priorità",
 label2 = "Con Priorità"
 
-#tassi di arrivo dinamici
-tassi_costanti=[70,85,89] # stabile, vicino l'instabilità e instabile si posso modificare
 def main():
     """
     Funzione principale che orchestra l'intero processo.
@@ -38,7 +36,7 @@ def main():
 
     lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
 
-    # --- DECOMMENTA IL CICLO ---
+
     for scenario_name, lambda_fn in arrival_scenarios.items():
         print(f"\n{'='*20} ESECUZIONE SCENARIO: {scenario_name.upper()} {'='*20}")
 
@@ -89,7 +87,7 @@ def main():
         all_run_metrics[scenario_name] = {'baseline': metrics_base, 'priority': metrics_prio}
         # --------------------------------------------------------
 
-    # --- NUOVA SEZIONE: ANALISI DI VALIDAZIONE GLOBALE ---
+
     if all_run_metrics:
         validation_plotter = ValidationPlotter(all_run_metrics, config)
         validation_plotter.generate_validation_report()
@@ -115,7 +113,7 @@ def run_steady_state_experiment():
     output_dir = "plots/steady_state"
 
     # Usiamo un tasso di arrivo fisso per l'analisi, es. 70
-    steady_lambda_fn = lambda t: 70
+    steady_lambda_fn = lambda t: 85
 
     # Creiamo i 3 generatori RNG necessari, usando il seed di base per riproducibilità
     base_seed = config.LEHMER_SEED
@@ -125,7 +123,7 @@ def run_steady_state_experiment():
 
     # --- ESECUZIONE BASELINE ---
     print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
-    metrics_baseline = Metrics()
+    metrics_baseline = Metrics(config_module=config)
     simulator_baseline = Simulator(
         config_module=config,
         metrics=metrics_baseline,
