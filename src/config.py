@@ -3,13 +3,13 @@ from enum import Enum
 from enum import IntEnum
 
 # --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
-SIMULATION_TIME = 30000   # Tempo totale di simulazione (in secondi)
+SIMULATION_TIME = 3600   # Tempo totale di simulazione (in secondi)
 LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
 
 # --- ANALISI ORIZZONTE INFINITO ---
 WARM_UP_TO_STEADY = 2500        # tempo per raggiungere il comportamento transitorio
 STEADY_SIMULATION_TIME = 10000
-NUM_BATCHES = 20                # Un numero medio
+NUM_BATCHES = 40                # Un numero medio
 CONFIDENCE_LEVEL = 0.95
 STEADY_ENABLED = True           # Per comodità la attiviamo solo quando necessario perché molto lunga
 

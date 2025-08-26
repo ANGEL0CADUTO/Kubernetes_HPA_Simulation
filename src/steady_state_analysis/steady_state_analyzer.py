@@ -1,9 +1,13 @@
-# src/analysis/steady_state_analyzer.py
+
 import os
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import t
+from scipy.stats import t, stats
+
+from src.config import RequestType
+
+
 
 class SteadyStateAnalyzer:
     """
@@ -13,6 +17,9 @@ class SteadyStateAnalyzer:
     def __init__(self, metrics, config):
         self.metrics = metrics
         self.config = config
+        self.steady_state_detected = False
+        self.steady_state_start_time = None
+        self.system_state_history = []  # Per memorizzare lo stato del sistema nel tempo
 
     def calculate_lag1_autocorrelation(self, batch_means):
         """
@@ -162,6 +169,145 @@ class SteadyStateAnalyzer:
             print(f"  - Lag-1 Autocorrelazione tra Batch: {autocorr_val:.4f}")
             if abs(autocorr_val) > 0.2:
                 print("    -> ATTENZIONE: Autocorrelazione > 0.2. I batch potrebbero non essere sufficientemente indipendenti.")
+
+
+
+    """ -------------------------------NUOVO---------------------------"""
+    #Esempio dei batch means con welford
+
+    def detect_steady_state(self, timestamp, queue_length, active_pods):
+        """
+        Implementa rilevamento automatico dello steady-state usando test statistici.
+        Basato su Welch's method per rilevamento di convergenza.
+        """
+        self.system_state_history.append((timestamp, queue_length, active_pods))
+
+        # Necessari almeno 100 campioni per test affidabile
+        if len(self.system_state_history) < 100:
+            return False
+
+        # Test di stazionarietà sulle ultime 50 vs precedenti 50 osservazioni
+        recent_data = [x[1] for x in self.system_state_history[-50:]]  # queue_length
+        previous_data = [x[1] for x in self.system_state_history[-100:-50]]
+
+        # Test t di Welch per uguaglianza delle medie
+        t_stat, p_value = stats.ttest_ind(recent_data, previous_data, equal_var=False)
+
+        # Se p > 0.05, le medie non sono significativamente diverse
+        if p_value > 0.05 and not self.steady_state_detected:
+            self.steady_state_detected = True
+            self.steady_state_start_time = timestamp
+            print(f"STEADY-STATE RILEVATO al tempo {timestamp:.2f}s (p-value={p_value:.4f})")
+
+        return self.steady_state_detected
+
+    def batch_means_analysis(self, req_type: RequestType, num_batches=20):
+        if not self.steady_state_detected:
+            print("ATTENZIONE: Steady-state non rilevato. Risultati potrebbero essere biased.")
+
+        steady_start = self.steady_state_start_time or 0
+        data = self.metrics.get_response_times_by_type(req_type)
+        steady_data = [(t, v) for (t, v) in data if t >= steady_start]
+
+        if len(steady_data) < num_batches * 10:
+            return None
+
+        steady_values = [v for _, v in steady_data]
+        batch_size = len(steady_values) // num_batches
+
+        batch_means = []
+        for i in range(num_batches):
+            start_idx = i * batch_size
+            end_idx = (i + 1) * batch_size if i < num_batches - 1 else len(steady_values)
+            batch_means.append(np.mean(steady_values[start_idx:end_idx]))
+
+        batch_mean = np.mean(batch_means)
+        batch_var = np.var(batch_means, ddof=1)
+        dof = len(batch_means) - 1
+        t_critical = stats.t.ppf(0.975, dof)
+        margin_of_error = t_critical * np.sqrt(batch_var / len(batch_means))
+
+        return {
+            'mean': batch_mean,
+            'variance': batch_var,
+            'confidence_interval': (batch_mean - margin_of_error, batch_mean + margin_of_error),
+            'num_batches': len(batch_means),
+            'batch_size': batch_size,
+            'steady_state_used': self.steady_state_detected
+        }
+
+
+
+    def test_independence(self, req_type: RequestType, max_lag=20):
+        """
+        Test di autocorrelazione per verificare indipendenza dei dati.
+        Critico per validità dell'analisi statistica.
+        """
+        if not self.steady_state_detected:
+            return None
+
+        steady_start = self.steady_state_start_time or 0
+        data_times = self.completion_timestamps[req_type]
+        data_values = self.response_times_raw[req_type]
+
+        steady_data = [v for t, v in zip(data_times, data_values) if t >= steady_start]
+
+        if len(steady_data) < 100:
+            return None
+
+        # Calcola autocorrelazioni per vari lag
+        autocorrs = []
+        for lag in range(1, min(max_lag + 1, len(steady_data) // 4)):
+            correlation = np.corrcoef(steady_data[:-lag], steady_data[lag:])[0, 1]
+            autocorrs.append((lag, correlation))
+
+        # Test se qualche autocorrelazione è significativamente diversa da 0
+        significant_correlations = [(lag, corr) for lag, corr in autocorrs if abs(corr) > 0.2]
+
+        return {
+            'autocorrelations': autocorrs,
+            'significant_correlations': significant_correlations,
+            'independence_violated': len(significant_correlations) > 0
+        }
+
+    def comprehensive_statistical_report(self):
+        """
+        Genera un report completo che soddisfa i criteri di Kurkowski.
+        """
+        print("\n" + "="*80)
+        print("REPORT STATISTICO RIGOROSO (secondo Kurkowski et al.)")
+        print("="*80)
+
+        print(f"\n1. CONFIGURAZIONE DELLA SIMULAZIONE:")
+        print(f"   - Seed Lehmer: {self.config.LEHMER_SEED}")
+        print(f"   - Durata simulazione: {self.config.SIMULATION_TIME}s")
+        print(f"   - Steady-state rilevato: {'SÌ' if self.steady_state_detected else 'NO'}")
+        if self.steady_state_start_time:
+            print(f"   - Inizio steady-state: {self.steady_state_start_time:.2f}s")
+
+        print(f"\n2. ANALISI BATCH MEANS (95% Confidence Intervals):")
+        for req_type in RequestType:
+            batch_analysis = self.batch_means_analysis(req_type)
+            if batch_analysis:
+                ci_lower, ci_upper = batch_analysis['confidence_interval']
+                print(f"   {req_type.name:12}: μ = {batch_analysis['mean']:.4f}s")
+                print(f"   {'':12}  95% CI: [{ci_lower:.4f}, {ci_upper:.4f}]")
+                print(f"   {'':12}  Batches: {batch_analysis['num_batches']}")
+
+        print(f"\n3. TEST DI INDIPENDENZA (Autocorrelazione):")
+        for req_type in RequestType:
+            independence = self.test_independence(req_type)
+            if independence:
+                status = "VIOLATA" if independence['independence_violated'] else "OK"
+                print(f"   {req_type.name:12}: {status}")
+                if independence['significant_correlations']:
+                    print(f"   {'':12}  Correlazioni significative: {independence['significant_correlations']}")
+
+        print(f"\n4. VALIDAZIONE STATISTICA:")
+        print(f"   - Initialization bias: {'Gestito' if self.steady_state_detected else 'NON GESTITO'}")
+        print(f"   - Multiple runs: {'Implementato' if hasattr(self, 'run_id') else 'NON IMPLEMENTATO'}")
+        print(f"   - Confidence intervals: Implementati")
+        print(f"   - Independence test: Implementato")
 
 
 

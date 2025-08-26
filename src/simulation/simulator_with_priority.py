@@ -1,14 +1,15 @@
 
 
-import simpy
-from simpy.resources.store import PriorityStore, PriorityItem
 from collections import defaultdict
 
-from src.config import Priority
-from src.model.request import PriorityRequest # Importa la classe corretta
+import simpy
+from simpy.resources.store import PriorityStore, PriorityItem
+
 from src.controller.hpa import HPA
+from src.model.request import PriorityRequest  # Importa la classe corretta
 from src.service.service import PodService
 from src.service.traffic_profiler import DynamicTrafficProfiler
+
 
 class SimulatorWithPriority:
     class _Pod:

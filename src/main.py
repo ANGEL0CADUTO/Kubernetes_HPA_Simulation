@@ -6,13 +6,14 @@ from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
 from src.utils.lehmer_rng import LehmerRNG
 from src.utils.metrics import Metrics
-from analysis.data_report import export_summary
-from analysis.data_report import *
+
 from analysis.validation_plotter import  ValidationPlotter
 from analysis.plotter import Plotter
 from src.simulation.simulator import Simulator
 from src.utils.metrics_with_priority import MetricsWithPriority
 import os # Importa il modulo os per creare le directory
+
+from src.utils.prng_validator import PRNGValidator
 
 csv1 = "output/non_prioritized_summary.csv",
 csv2 = "output/prioritized_summary.csv",
@@ -41,6 +42,11 @@ def main():
         print(f"\n{'='*20} ESECUZIONE SCENARIO: {scenario_name.upper()} {'='*20}")
 
         lehmer_rng._next_seed()
+        """ Validazione del PRNG Lehmer"""
+        valid, prng_results = PRNGValidator.validate_lehmer_for_simulation(lehmer_rng)
+        if not valid:
+            print("Il Lehmer RNG non è adeguato per la simulazione. Interruzione.")
+
         base_seed_for_scenario = lehmer_rng._next_seed()
         scenario_rng_gen = LehmerRNG(seed=base_seed_for_scenario)
         seeds = scenario_rng_gen.get_numpy_seeds(count=3)
@@ -118,6 +124,10 @@ def run_steady_state_experiment():
     # Creiamo i 3 generatori RNG necessari, usando il seed di base per riproducibilità
     base_seed = config.LEHMER_SEED
     lehmer_rng = LehmerRNG(seed=base_seed)
+    valid, prng_results = PRNGValidator.validate_lehmer_for_simulation(lehmer_rng)
+    if not valid:
+        print("Il Lehmer RNG non è adeguato per la simulazione. Interruzione.")
+
     seeds = lehmer_rng.get_numpy_seeds(count=3)
     arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
 

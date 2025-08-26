@@ -4,6 +4,8 @@ import numpy as np
 
 from src.config import Priority, RequestType
 from src.model.request import PriorityRequest
+from src.utils.welford import Welford
+
 
 class MetricsWithPriority:
     """
@@ -12,6 +14,19 @@ class MetricsWithPriority:
     """
     def __init__(self, config_module):
         self.config = config_module
+
+        # Welford per statistiche incrementali per priorità
+        self.response_times_welford_by_priority = defaultdict(lambda: Welford())
+        self.wait_times_welford_by_priority = defaultdict(lambda: Welford())
+
+        # Welford per statistiche incrementali per tipo di richiesta
+        self.response_times_welford_by_req_type = defaultdict(lambda: Welford())
+        self.wait_times_welford_by_req_type = defaultdict(lambda: Welford())
+
+        # Welford globale
+        self.global_welford_response = Welford()
+        self.global_welford_wait = Welford()
+
 
         # Metriche di sistema (uguali alla baseline)
         self.timestamps = []
@@ -71,6 +86,19 @@ class MetricsWithPriority:
         prio = request.priority
         req_type = request.req_type
 
+        #  Welford per priorità
+        self.response_times_welford_by_priority[prio].add(response_time)
+        self.wait_times_welford_by_priority[prio].add(wait_time)
+
+        # Welford per tipo di richiesta
+        self.response_times_welford_by_req_type[req_type].add(response_time)
+        self.wait_times_welford_by_req_type[req_type].add(wait_time)
+
+        # Welford globale
+        self.global_welford_response.add(response_time)
+        self.global_welford_wait.add(wait_time)
+
+
         # Incrementa i contatori e registra i dati per Priorità
         self.requests_completed_by_priority[prio] += 1
         self.response_times_by_priority[prio].append(response_time)
@@ -103,9 +131,78 @@ class MetricsWithPriority:
             'QueueLength': self.queue_lengths
         })
 
+    def get_welford_statistics(self):
+        """
+        Restituisce tutte le statistiche calcolate con Welford.
+        """
+        stats = {
+            'by_priority': {},
+            'by_req_type': {},
+            'global': {}
+        }
+
+        # Statistiche per priorità
+        for priority in Priority:
+            resp_welford = self.response_times_welford_by_priority[priority]
+            wait_welford = self.wait_times_welford_by_priority[priority]
+
+            if resp_welford.count > 0:
+                stats['by_priority'][priority] = {
+                    'count': resp_welford.count,
+                    'response_time': {
+                        'mean': resp_welford.mean,
+                        'variance': resp_welford.var_s,
+                        'std_dev': np.sqrt(resp_welford.var_s) if resp_welford.var_s is not None else None
+                    },
+                    'wait_time': {
+                        'mean': wait_welford.mean,
+                        'variance': wait_welford.var_s,
+                        'std_dev': np.sqrt(wait_welford.var_s) if wait_welford.var_s is not None else None
+                    }
+                }
+
+        # Statistiche per tipo di richiesta
+        for req_type in RequestType:
+            resp_welford = self.response_times_welford_by_req_type[req_type]
+            wait_welford = self.wait_times_welford_by_req_type[req_type]
+
+            if resp_welford.count > 0:
+                stats['by_req_type'][req_type] = {
+                    'count': resp_welford.count,
+                    'response_time': {
+                        'mean': resp_welford.mean,
+                        'variance': resp_welford.var_s,
+                        'std_dev': np.sqrt(resp_welford.var_s) if resp_welford.var_s is not None else None
+                    },
+                    'wait_time': {
+                        'mean': wait_welford.mean,
+                        'variance': wait_welford.var_s,
+                        'std_dev': np.sqrt(wait_welford.var_s) if wait_welford.var_s is not None else None
+                    }
+                }
+
+        # Statistiche globali
+        if self.global_welford_response.count > 0:
+            stats['global'] = {
+                'response_time': {
+                    'mean': self.global_welford_response.mean,
+                    'variance': self.global_welford_response.var_s,
+                    'std_dev': np.sqrt(self.global_welford_response.var_s)
+                    if self.global_welford_response.var_s is not None else None
+                },
+                'wait_time': {
+                    'mean': self.global_welford_wait.mean,
+                    'variance': self.global_welford_wait.var_s,
+                    'std_dev': np.sqrt(self.global_welford_wait.var_s)
+                    if self.global_welford_wait.var_s is not None else None
+                }
+            }
+
+        return stats
+
     def print_summary(self):
-        """Stampa un riepilogo delle metriche finali, divise per priorità e tipo."""
-        print("\n--- Riepilogo Metriche di Performance (con Priorità) ---")
+        """Stampa migliorato che usa le statistiche di Welford."""
+        print("\n--- Riepilogo Metriche di Performance (con Priorità + Welford) ---")
 
         total_generated = len(self.request_generation_timestamps)
         total_completed = sum(self.requests_completed_by_priority.values())
@@ -114,57 +211,43 @@ class MetricsWithPriority:
         print(f"Richieste totali generate: {total_generated}")
         print(f"Richieste totali completate: {total_completed}")
         print(f"Richieste totali perse (timeout): {total_timeouts}")
-        print(f"Richieste rimaste in coda alla fine: {total_generated - total_completed - total_timeouts}")
 
-        print("\n--- Numero di Richieste Servite per Tipo ---")
+        # Ottieni statistiche Welford
+        welford_stats = self.get_welford_statistics()
+
+        print("\n--- Statistiche Welford per Classe di Priorità ---")
+        for priority in sorted(Priority):
+            if priority in welford_stats['by_priority']:
+                stats = welford_stats['by_priority'][priority]
+                print(f"\nPriorità {priority.name}:")
+                resp_mean = float(stats['response_time']['mean'])
+                resp_std = float(stats['response_time']['std_dev'])
+                wait_mean = float(stats['wait_time']['mean'])
+                wait_std = float(stats['wait_time']['std_dev'])
+
+                print(f"  - Richieste completate: {stats['count']}")
+                print(f"  - Tempo di risposta medio: {resp_mean:.4f}s")
+                print(f"  - Std dev tempo di risposta: {resp_std:.4f}s")
+                print(f"  - Tempo di attesa medio: {wait_mean:.4f}s")
+                print(f"  - Std dev tempo di attesa: {wait_std:.4f}s")
+
+        print("\n--- Statistiche Welford per Tipo di Richiesta ---")
         for req_type in sorted(RequestType, key=lambda e: e.name):
-            # Usiamo self.response_times_by_req_type che registra solo le richieste completate
-            served_count = len(self.response_times_by_req_type.get(req_type, []))
-            print(f"- {req_type.name:12}: {served_count}")
+            if req_type in welford_stats['by_req_type']:
+                stats = welford_stats['by_req_type'][req_type]
+                print(f"\n{req_type.name}:")
+                print(f"  - Richieste completate: {stats['count']}")
+                resp_mean = float(stats['response_time']['mean'])
+                resp_std = float(stats['response_time']['std_dev'])
+                wait_mean = float(stats['wait_time']['mean'])
+                wait_std = float(stats['wait_time']['std_dev'])
+                print(f"  - Tempo di risposta medio: {resp_mean:.4f}s")
+                print(f"  - Std dev tempo di risposta: {resp_std:.4f}s")
+                print(f"  - Tempo di attesa medio: {wait_mean:.4f}s")
+                print(f"  - Std dev tempo di attesa: {wait_std:.4f}s")
 
-        # --- STAMPA PER PRIORITÀ (INVARIATA) ---
-        print("\n--- Dettaglio per Classe di Priorità ---")
-        for prio in sorted(Priority):
-            num_completed = self.requests_completed_by_priority[prio]
-            generated_count = self.requests_generated_by_priority[prio]
-            num_timeouts = self.requests_timed_out_by_priority[prio]
 
-            if generated_count == 0:
-                print(f"\nClasse di Priorità: {prio.name} - Nessuna richiesta generata.")
-                continue
 
-            print(f"\nClasse di Priorità: {prio.name}")
-            print(f"  - Richieste Generate: {generated_count}")
-            print(f"  - Richieste Servite: {num_completed}")
-
-            if self.response_times_by_priority[prio]:
-                avg_response_time = np.mean(self.response_times_by_priority[prio])
-                avg_wait_time = np.mean(self.wait_times_by_priority[prio])
-                max_response_time = max(self.response_times_by_priority[prio])
-
-                print(f"  - Tempo di Risposta Medio: {avg_response_time:.4f}s")
-                print(f"  - Tempo di Attesa Medio:   {avg_wait_time:.4f}s")
-                print(f"  - Tempo di Risposta Massimo: {max_response_time:.4f}s")
-
-            # --- P_LOSS ---
-            if generated_count > 0:
-                p_loss_prio = num_timeouts / generated_count
-                print(f"  - P_loss Specifica:   {p_loss_prio:.2%}")
-
-        # --- NUOVA SEZIONE DI STAMPA PER TIPO DI RICHIESTA ---
-        print("\n\n--- Dettaglio per Tipo di Richiesta (per Confronto Diretto con Baseline) ---")
-        print("\n--- Tempo Medio di Risposta per Tipo di Richiesta (s) ---")
-        for req_type in sorted(RequestType, key=lambda e: e.name):
-            if self.response_times_by_req_type[req_type]:
-                avg_resp_time = np.mean(self.response_times_by_req_type[req_type])
-                print(f"- {req_type.name:12}: {avg_resp_time:.4f}")
-
-        print("\n--- Tempo Medio di Attesa per Tipo di Richiesta (s) ---")
-        for req_type in sorted(RequestType, key=lambda e: e.name):
-            if self.wait_times_by_req_type[req_type]:
-                avg_wait_time = np.mean(self.wait_times_by_req_type[req_type])
-                print(f"- {req_type.name:12}: {avg_wait_time:.4f}")
-        # -------------------------------------------------------------
 
     def get_all_response_times_with_timestamps(self):
         """
