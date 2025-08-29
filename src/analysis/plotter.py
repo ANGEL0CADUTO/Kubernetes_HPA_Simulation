@@ -311,3 +311,68 @@ class Plotter:
         self.plot_response_time_trend(output_dir=output_dir, filename=f"{run_prefix}_5_response_time_trend.png")
         self.plot_pod_history(output_dir=output_dir, filename=f"{run_prefix}_6_pod_history.png")
         self.plot_queue_history(output_dir=output_dir, filename=f"{run_prefix}_7_queue_history.png")
+    def plot_replication_traces_per_scenario(self, all_results: dict, num_replications: int, output_dir='output/aggregated'):
+        """
+        Crea un GRAFICO SEPARATO PER OGNI SCENARIO DI TRAFFICO.
+        Ogni grafico mostra l'andamento del tempo di risposta medio per ogni replica.
+        """
+        print("\n--- Generazione Grafici delle Tracce delle Repliche (uno per scenario) ---")
+
+        # Ciclo principale: uno per ogni scenario (es. tasso_70, tasso_85)
+        for scenario_name, replications in all_results.items():
+
+            # 1. Creiamo una nuova figura per questo specifico scenario
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 12), sharex=True)
+            fig.suptitle(f'Tracce delle Repliche per Scenario: "{scenario_name.upper()}"', fontsize=18)
+
+            # 2. Prepariamo i colori per le linee delle repliche
+            colors = plt.cm.viridis(np.linspace(0, 1, num_replications))
+
+            # 3. Cicliamo sulle repliche di questo scenario per disegnarle
+            for i in range(num_replications):
+                color = colors[i]
+                rep_data = replications.get(i)
+                if not rep_data: continue
+
+                # Prendiamo il seed di questa replica
+                seed = rep_data.get('seed', f'Replica {i+1}')
+                label_text = f'Seed: {seed}'
+
+                # --- Grafico 1: Modello Baseline ---
+                metrics_base = rep_data['baseline']
+                all_responses_base = metrics_base.get_all_response_times_with_timestamps()
+                if all_responses_base:
+                    times, values = zip(*all_responses_base)
+                    cum_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
+                    ax1.plot(times, cum_avg, color=color, alpha=0.8, label=label_text)
+
+                # --- Grafico 2: Modello con Priorità ---
+                metrics_prio = rep_data['priority']
+                all_responses_prio = metrics_prio.get_all_response_times_with_timestamps()
+                if all_responses_prio:
+                    times, values = zip(*all_responses_prio)
+                    cum_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
+                    ax2.plot(times, cum_avg, color=color, alpha=0.8, label=label_text)
+
+            # 4. Abbelliamo i grafici
+            ax1.set_title('Modello Baseline (FIFO)')
+            ax1.set_ylabel('Tempo di Risposta Medio (s)')
+            ax1.grid(True, linestyle='--', alpha=0.6)
+            ax1.legend()
+
+            ax2.set_title('Modello Migliorato (Priorità)')
+            ax2.set_xlabel('Tempo di Simulazione (s)')
+            ax2.set_ylabel('Tempo di Risposta Medio (s)')
+            ax2.grid(True, linestyle='--', alpha=0.6)
+            ax2.legend()
+
+            # 5. Salviamo il file con un nome specifico per lo scenario
+            output_filename = f'replication_traces_{scenario_name}.png'
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            save_path = os.path.join(output_dir, output_filename)
+            fig.tight_layout(rect=[0, 0.03, 1, 0.96])
+            fig.savefig(save_path, dpi=300)
+            plt.close(fig)
+            print(f"Grafico delle tracce per '{scenario_name}' salvato in: {save_path}")

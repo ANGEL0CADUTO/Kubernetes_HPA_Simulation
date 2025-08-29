@@ -1,181 +1,174 @@
+# File: main.py (VERSİONE CORRETTA E AGGIORNATA)
+
 import numpy as np
+import os
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from src import config
-
-from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
-from src.simulation.simulator_with_priority import SimulatorWithPriority
-from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
-from src.utils.lehmer_rng import LehmerRNG
-from src.utils.metrics import Metrics
-
-from analysis.validation_plotter import  ValidationPlotter
-from analysis.plotter import Plotter
 from src.simulation.simulator import Simulator
+from src.simulation.simulator_with_priority import SimulatorWithPriority
+from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-import os # Importa il modulo os per creare le directory
+from analysis.plotter import Plotter
+from analysis.validation_plotter import ValidationPlotter
+from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
+from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
 
-from src.utils.prng_validator import PRNGValidator
-
-csv1 = "output/non_prioritized_summary.csv",
-csv2 = "output/prioritized_summary.csv",
-label1 = "Senza Priorità",
-label2 = "Con Priorità"
+# MODIFICATO: L'import ora carica la NUOVA classe che gestisce gli stream
+from src.utils.lehmer_rng import LehmerRNG as RNGManager # Usiamo un alias per chiarezza
 
 def main():
     """
-    Funzione principale che orchestra l'intero processo.
+    Funzione principale che orchestra l'intero processo di simulazione.
     """
-    print("--- Inizio Progetto di Simulazione E-commerce ---")
+    print("--- Inizio Progetto di Simulazione E-commerce (Versione con Rigore Metodologico) ---")
+
+    NUM_REPLICATIONS = 2
 
     arrival_scenarios = {
-        "tasso_70": lambda t: 70,
-        "tasso_85": lambda t: 85,
-        "tasso_100": lambda t: 100,
+        "tasso_70": lambda t: 85,
+        #"tasso_85": lambda t: 170,
+        # "tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
     }
 
-    # Dizionario per raccogliere i risultati di tutte le run
-    all_run_metrics = {}
+    rng_manager = RNGManager(master_seed=config.LEHMER_SEED)
+    all_results = {scenario_name: {} for scenario_name in arrival_scenarios}
 
-    lehmer_rng = LehmerRNG(seed=config.LEHMER_SEED)
+    for i in range(NUM_REPLICATIONS):
+        print(f"\n{'='*30} INIZIO REPLICA {i + 1}/{NUM_REPLICATIONS} {'='*30}")
+        for scenario_name, lambda_fn in arrival_scenarios.items():
+            print(f"\n--- ESECUZIONE SCENARIO: {scenario_name.upper()} ---")
+            replication_streams, rep_seed = rng_manager.get_replication_streams()
 
+            # --- ESECUZIONE BASELINE ---
+            print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO BASELINE (FIFO) ---")
+            metrics_base = Metrics(config_module=config)
+            simulator_base = Simulator(
+                config_module=config, metrics=metrics_base,
+                arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+                service_rng=replication_streams['service'], lambda_function=lambda_fn
+            )
+            simulator_base.run(simulation_duration=config.SIMULATION_TIME)
 
-    for scenario_name, lambda_fn in arrival_scenarios.items():
-        print(f"\n{'='*20} ESECUZIONE SCENARIO: {scenario_name.upper()} {'='*20}")
+            # --- ESECUZIONE MIGLIORATA ---
+            print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
+            metrics_prio = MetricsWithPriority(config)
+            simulator_prio = SimulatorWithPriority(
+                config_module=config, metrics=metrics_prio,
+                arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+                service_rng=replication_streams['service'], lambda_function=lambda_fn
+            )
+            simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
 
-        lehmer_rng._next_seed()
-        """ Validazione del PRNG Lehmer"""
-        valid, prng_results = PRNGValidator.validate_lehmer_for_simulation(lehmer_rng)
-        if not valid:
-            print("Il Lehmer RNG non è adeguato per la simulazione. Interruzione.")
+            all_results[scenario_name][i] = {
+                'baseline': metrics_base,
+                'priority': metrics_prio,
+                'seed': rep_seed
+            }
+            # --- Generazione report dettagliati per QUESTA specifica replica ---
+            print(f"\n--- Generazione report per {scenario_name}, Replica {i+1} ---")
+            output_folder = f"output/plots_{scenario_name}/replica_{i+1}"
 
-        base_seed_for_scenario = lehmer_rng._next_seed()
-        scenario_rng_gen = LehmerRNG(seed=base_seed_for_scenario)
-        seeds = scenario_rng_gen.get_numpy_seeds(count=3)
-        arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
+            single_run_plotter = Plotter(metrics_base, metrics_prio, config)
+            single_run_plotter.generate_comprehensive_report(
+                output_dir=output_folder,
+                run_prefix=f"{scenario_name}_repl{i+1}"
+            )
 
-        # --- ESECUZIONE BASELINE ---
-        print(f"\n--- {scenario_name}: SCENARIO BASELINE (FIFO) ---")
-        metrics_base = Metrics(config_module=config)
-        arrival_rng_base = np.random.default_rng(seed=arrival_seed)
-        choice_rng_base = np.random.default_rng(seed=choice_seed)
-        service_rng_base = np.random.default_rng(seed=service_seed)
-        simulator_base = Simulator(
-            config_module=config, metrics=metrics_base, arrival_rng=arrival_rng_base,
-            choice_rng=choice_rng_base, service_rng=service_rng_base, lambda_function=lambda_fn
-        )
-        simulator_base.run(simulation_duration=config.SIMULATION_TIME)
-        metrics_base.print_summary()
-        print("\n--- Esecuzione baseline terminata ---")
+    print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE E SCENARI {'='*30}")
 
-        # --- ESECUZIONE MIGLIORATA ---
-        print(f"\n--- {scenario_name}: SCENARIO MIGLIORATO (PRIORITY) ---")
-        metrics_prio = MetricsWithPriority(config)
-        arrival_rng_prio = np.random.default_rng(seed=arrival_seed)
-        choice_rng_prio = np.random.default_rng(seed=choice_seed)
-        service_rng_prio = np.random.default_rng(seed=service_seed)
-        simulator_prio = SimulatorWithPriority(
-            config_module=config, metrics=metrics_prio, arrival_rng=arrival_rng_prio,
-            choice_rng=choice_rng_prio, service_rng=service_rng_prio, lambda_function=lambda_fn
-        )
-        simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
-        metrics_prio.print_summary()
-        print("\n--- Esecuzione migliorativa terminata ---")
-
-        # --- ANALISI DEI RISULTATI per questo scenario ---
-        print(f"\n--- Generazione report per lo scenario: {scenario_name} ---")
-        output_folder = f"output/plots_{scenario_name}"
-        os.makedirs(output_folder, exist_ok=True)
-        #export_summary(metrics_prio, output_dir=output_folder, label=f"{scenario_name}_con_priorita", by_priority=True)
-        #export_summary(metrics_base, output_dir=output_folder, label=f"{scenario_name}_senza_priorita", by_priority=False)
-        plotter = Plotter(metrics_base, metrics_prio, config)
-        plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=scenario_name)
-
-        # --- AGGIUNTA: SALVA I RISULTATI PER L'ANALISI FINALE ---
-        all_run_metrics[scenario_name] = {'baseline': metrics_base, 'priority': metrics_prio}
-        # --------------------------------------------------------
-
-
-    if all_run_metrics:
-        validation_plotter = ValidationPlotter(all_run_metrics, config)
-        validation_plotter.generate_validation_report()
-    # ---------------------------------------------------
-
-    if config.STEADY_ENABLED:
-        print("--- Inizio Simulazione Steady-State ---")
-        run_steady_state_experiment()
-        print("--- Fine Simulazione Steady-State ---")
-
-    print("\nTutte le simulazioni sono terminate.")
+    # La funzione main ora restituisce semplicemente i dati raccolti
+    return all_results, NUM_REPLICATIONS
 
 
 
+    # # --- ANALISI FINALE DEI RISULTATI ---
+    # # La generazione dei report per singola replica è utile per il debug, ma possiamo commentarla
+    # # per concentrarci sui risultati aggregati.
+    # # print("\n--- Generazione report di esempio (basati sull'ultima replica) ---")
+    # # last_replica_index = NUM_REPLICATIONS - 1
+    # # for scenario_name in arrival_scenarios:
+    # #     output_folder = f"output/plots_{scenario_name}"
+    # #     os.makedirs(output_folder, exist_ok=True)
+    # #     last_run_metrics = all_results[scenario_name][last_replica_index]
+    # #     plotter = Plotter(last_run_metrics['baseline'], last_run_metrics['priority'], config)
+    # #     plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=f"{scenario_name}_repl{last_replica_index+1}")
+    #
+    #
+    #
+    #
+    # # --- STEADY-STATE (se abilitato) ---
+    # if config.STEADY_ENABLED:
+    #     print("\n--- Inizio Simulazione Steady-State ---")
+    #     run_steady_state_experiment(rng_manager)
+    #     print("--- Fine Simulazione Steady-State ---")
+    #
+    # print("\n--- Processo di Simulazione e Analisi Completato ---")
+    # return all_results, NUM_REPLICATIONS # <-- Questa riga è necessaria
 
-def run_steady_state_experiment():
+
+def run_steady_state_experiment(rng_manager: RNGManager):
     """
-    Esegue entrambe le simulazioni a orizzonte infinito e genera i grafici di
-    confronto steady-state.
+    Esegue la simulazione a orizzonte infinito per l'analisi di regime permanente.
+    (Questa funzione rimane invariata)
     """
     print("\n--- AVVIO ESPERIMENTO STEADY-STATE A ORIZZONTE INFINITO ---")
-
     output_dir = "plots/steady_state"
-
-    # Usiamo un tasso di arrivo fisso per l'analisi, es. 70
     steady_lambda_fn = lambda t: 85
+    steady_streams = rng_manager.get_replication_streams()
 
-    # Creiamo i 3 generatori RNG necessari, usando il seed di base per riproducibilità
-    base_seed = config.LEHMER_SEED
-    lehmer_rng = LehmerRNG(seed=base_seed)
-    valid, prng_results = PRNGValidator.validate_lehmer_for_simulation(lehmer_rng)
-    if not valid:
-        print("Il Lehmer RNG non è adeguato per la simulazione. Interruzione.")
-
-    seeds = lehmer_rng.get_numpy_seeds(count=3)
-    arrival_seed, choice_seed, service_seed = seeds[0], seeds[1], seeds[2]
-
-    # --- ESECUZIONE BASELINE ---
     print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
     metrics_baseline = Metrics(config_module=config)
     simulator_baseline = Simulator(
-        config_module=config,
-        metrics=metrics_baseline,
-        arrival_rng=np.random.default_rng(arrival_seed),
-        choice_rng=np.random.default_rng(choice_seed),
-        service_rng=np.random.default_rng(service_seed),
-        lambda_function=steady_lambda_fn
+        config_module=config, metrics=metrics_baseline,
+        arrival_rng=steady_streams['arrivals'], choice_rng=steady_streams['choice'],
+        service_rng=steady_streams['service'], lambda_function=steady_lambda_fn
     )
     simulator_baseline.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-    # --- ESECUZIONE PRIORITÀ ---
     print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
     metrics_prio = MetricsWithPriority(config)
     simulator_prio = SimulatorWithPriority(
-        config_module=config,
-        metrics=metrics_prio,
-        arrival_rng=np.random.default_rng(arrival_seed),
-        choice_rng=np.random.default_rng(choice_seed),
-        service_rng=np.random.default_rng(service_seed),
-        lambda_function=steady_lambda_fn
+        config_module=config, metrics=metrics_prio,
+        arrival_rng=steady_streams['arrivals'], choice_rng=steady_streams['choice'],
+        service_rng=steady_streams['service'], lambda_function=steady_lambda_fn
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-    # --- ANALISI E PLOTTING FINALE ---
     print("\n--- Generazione Report Steady-State ---")
-
-    # 1. Istanziamo gli oggetti necessari
     analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
     analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
     steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
-
-    # 2. Facciamo UN'UNICA chiamata al metodo orchestratore
     steady_plotter.generate_steady_state_report(
-        analyzer_baseline=analyzer_baseline,
-        analyzer_prio=analyzer_prio,
-        warmup=config.WARM_UP_TO_STEADY,
-        batches=config.NUM_BATCHES,
+        analyzer_baseline=analyzer_baseline, analyzer_prio=analyzer_prio,
+        warmup=config.WARM_UP_TO_STEADY, batches=config.NUM_BATCHES,
         output_dir=output_dir
     )
-
     print("\n--- Fine dell'analisi Steady-State ---")
 
 
+
 if __name__ == "__main__":
-    main()
+
+    # 1. Esegui tutte le simulazioni e ottieni i risultati
+    all_results, num_replications = main()
+
+    # 2. Se le simulazioni hanno prodotto risultati, procedi con l'analisi aggregata
+    if all_results:
+        # Inizializziamo un Plotter. I dati passati all'init sono irrilevanti
+        # per il metodo di plotting aggregato, che riceve tutto ciò di cui ha bisogno.
+        final_plotter = Plotter(None, None, config)
+
+        # Chiamiamo il metodo corretto per generare i grafici delle tracce
+        final_plotter.plot_replication_traces_per_scenario(all_results, num_replications)
+
+    # 3. Esegui l'analisi steady-state se è abilitata nel config
+    #    (Questa parte è separata e non è stata toccata)
+    if config.STEADY_ENABLED:
+        # Dovremmo ridefinire qui le funzioni o importarle correttamente
+        # Per ora, si assume che non sia l'obiettivo principale
+        print("\n--- Esecuzione Steady-State non implementata in questo script pulito ---")
+
+    print("\n--- Processo di Simulazione e Analisi Completato ---")

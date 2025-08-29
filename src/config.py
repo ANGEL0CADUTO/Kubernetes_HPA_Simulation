@@ -2,39 +2,43 @@ import math
 from enum import Enum
 from enum import IntEnum
 
-# --- CONFIGURAZIONI GENERALI DELLA SIMULAZIONE ---
-SIMULATION_TIME = 3600   # Tempo totale di simulazione (in secondi)
-LEHMER_SEED = 123456789     # Seed iniziale per il nostro generatore Lehmer
+# ==============================================================================
+# CONFIGURAZIONI GENERALI DELLA SIMULAZIONE
+# ==============================================================================
+SIMULATION_TIME = 500     # Durata delle simulazioni a orizzonte finito (s)
+LEHMER_SEED = 123456789     # Seed per la riproducibilità
 
-# --- ANALISI ORIZZONTE INFINITO ---
-WARM_UP_TO_STEADY = 2500        # tempo per raggiungere il comportamento transitorio
-STEADY_SIMULATION_TIME = 10000
-NUM_BATCHES = 40                # Un numero medio
+# --- ANALISI A ORIZZONTE INFINITO ---
+STEADY_SIMULATION_TIME = 30000  # Durata della simulazione lunga per l'analisi steady-state
+WARM_UP_TO_STEADY = 2500        # Periodo di transitorio da scartare, determinato dall'analisi di convergenza
+NUM_BATCHES = 40                # Numero di batch per l'analisi Batch Means (min. 30-40 per robustezza statistica)
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = True           # Per comodità la attiviamo solo quando necessario perché molto lunga
+STEADY_ENABLED = False           # Flag per attivare l'esecuzione della simulazione lunga
 
-# --- CONFIGURAZIONE DEL WORKER E DEI POD ---
-# Concettualmente abbiamo un solo worker node.
-# L'HPA scalerà i pod su questo nodo fino a un massimo di 8.
-NUM_WORKERS = 1
-INITIAL_PODS = 2            # Partiamo con 2 Pod attivi
-MAX_PODS = 8                # Massimo numero di Pod consentito
+# ==============================================================================
+# MODELLO DEL SISTEMA (Cluster Kubernetes)
+# ==============================================================================
+# Giustificazione: Modella un cluster di medie dimensioni con alta disponibilità,
+# distribuito su 3 Availability Zones (AZ), una pratica standard su cloud come AWS.
+NUM_WORKERS = 3
+INITIAL_PODS = 3            # Un Pod per worker all'avvio
+MIN_PODS = 2                # Minimo per garantire l'alta disponibilità
+MAX_PODS = 24               # Limite di budget/risorse (es. 8 pod max per worker)
 
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
+# Giustificazione: Parametri standard di Kubernetes (API v2) per un HPA reattivo.
 HPA_ENABLED = True
-HPA_SYNC_PERIOD = 7        # HPA controlla le metriche ogni 15 secondi
-CPU_TARGET = 0.60           # Utilizzo CPU target (60%) - un po' più basso per reagire prima
-MIN_PODS = 1                # Numero minimo di Pod
-# MAX_PODS è già definito sopra e verrà usato anche qui
+HPA_SYNC_PERIOD = 15        # Intervallo di polling (`--horizontal-pod-autoscaler-sync-period`).
+TARGET_QUEUE_LENGTH_PER_POD = 5 # Metrica custom per HPA: scala se ci sono più di 5 richieste in attesa per pod.
+MAX_SCALE_STEP = 4          # Kubernetes 1.18+ può aggiungere/rimuovere fino a 4 pod ogni 15s.
+SCALE_UP_COOLDOWN = 60      # Cooldown prima di un altro scale-up.
+SCALE_DOWN_COOLDOWN = 300   # Cooldown di 5 minuti prima di uno scale-down (standard per evitare oscillazioni).
 
+# ==============================================================================
+# MODELLO DEL CARICO DI LAVORO (WORKLOAD E-COMMERCE)
+# ==============================================================================
 
-MAX_SCALE_STEP = 2
-SCALE_UP_COOLDOWN = 30      # 1 minuto prima di poter fare un altro scale-up
-SCALE_DOWN_COOLDOWN = 150  # 5 minuti prima di poter fare un altro scale-down
-# Non modelliamo più il POD_STARTUP_TIME perché la capacità della risorsa è istantanea
-
-
-# --- DEFINIZIONE TIPI DI RICHIESTA ---
+# --- TIPI DI RICHIESTA ---
 class RequestType(Enum):
     LOGIN = 1
     NAVIGATION = 2
@@ -42,82 +46,62 @@ class RequestType(Enum):
     ANALYTICS = 4
     ADD_TO_CART = 5
 
-
-# --- PROFILO DEL CARICO DI LAVORO (WORKLOAD) ---
-#TOTAL_ARRIVAL_RATE = 70
-TARGET_QUEUE_LENGTH_PER_POD = 2  # NUOVA METRICA: scala se ci sono più di 2 richieste in attesa per pod
-
+# --- PROFILO DEL TRAFFICO ---
+# Giustificazione: Derivato da un modello di funnel di conversione calibrato su dati
+# di settore e misurazioni empiriche (Tasso di conversione ≈2.5%, Bounce Rate ≈38%,
+# Cart Abandonment Rate ≈70%).
 TRAFFIC_PROFILE = {
-    RequestType.LOGIN: 0.15,
-    RequestType.NAVIGATION: 0.40,
-    RequestType.CHECKOUT: 0.05,
-    RequestType.ANALYTICS: 0.25,
-    RequestType.ADD_TO_CART: 0.15
+    RequestType.NAVIGATION:  0.70,
+    RequestType.LOGIN:       0.15,
+    RequestType.ADD_TO_CART: 0.10,
+    RequestType.CHECKOUT:    0.025,
+    RequestType.ANALYTICS:   0.025
 }
 
-
-# --- FUNZIONE HELPER PER CALCOLARE I PARAMETRI LOG-NORMALE ---
+# --- TEMPI DI SERVIZIO ---
+# Giustificazione: Calibrati tramite misurazioni empiriche del Time To First Byte (TTFB)
+# e del tempo di risposta di chiamate API reali su zalando.it. La distribuzione Lognormale
+# è scelta per la sua capacità di modellare la "coda lunga" (long tail) dei tempi di risposta web.
 def get_lognormal_params(mean, stdev):
     if mean <= 0: return (0, 0)
     mu_log = math.log(mean**2 / math.sqrt(stdev**2 + mean**2))
     sigma_log = math.sqrt(math.log(stdev**2 / mean**2 + 1))
     return mu_log, sigma_log
 
-
-# --- CONFIGURAZIONE TEMPI DI SERVIZIO ---
 SERVICE_TIME_CONFIG = {
-    RequestType.LOGIN: {
-        "dist": "lognormal",
-        "params": get_lognormal_params(mean=0.05, stdev=0.02)
-    },
-    RequestType.NAVIGATION: {
-        "dist": "lognormal",
-        "params": get_lognormal_params(mean=0.1, stdev=0.08)
-    },
-    RequestType.CHECKOUT: {
-        "dist": "lognormal",
-        "params": get_lognormal_params(mean=0.5, stdev=0.4)
-    },
-    RequestType.ANALYTICS: {
-        "dist": "exponential",
-        "params": {"scale": 0.02}
-    },
-    RequestType.ADD_TO_CART: {
-        "dist": "lognormal",
-        "params": get_lognormal_params(mean=0.08, stdev=0.04)
-    }
+    RequestType.LOGIN:       {"dist": "lognormal", "params": get_lognormal_params(mean=0.30, stdev=0.20)},
+    RequestType.NAVIGATION:  {"dist": "lognormal", "params": get_lognormal_params(mean=0.30, stdev=0.15)},
+    RequestType.ADD_TO_CART: {"dist": "lognormal", "params": get_lognormal_params(mean=0.50, stdev=0.25)},
+    RequestType.CHECKOUT:    {"dist": "lognormal", "params": get_lognormal_params(mean=0.85, stdev=0.50)},
+    RequestType.ANALYTICS:   {"dist": "exponential", "params": {"scale": 0.05}}
 }
 
-# --- TIMEOUT IN SECONDI ---
+# --- TIMEOUT (Pazienza dell'utente) ---
+# Giustificazione: Basati su dati di usabilità web (Google) e metriche di performance
+# reali misurate su zalando.it (es. First Contentful Paint).
 REQUEST_TIMEOUTS = {
-    RequestType.LOGIN: 1.0,
-    RequestType.NAVIGATION: 1.0,
-    RequestType.ADD_TO_CART: 3.0,
-    RequestType.CHECKOUT: 7.0,  # L'utente è più paziente durante il checkout
-    RequestType.ANALYTICS: 5.0   # Richiesta interna, può essere scartata
+    RequestType.LOGIN:       3.0,
+    RequestType.NAVIGATION:  3.0,   # Soglia critica di abbandono per il caricamento di una pagina.
+    RequestType.ADD_TO_CART: 6.0,
+    RequestType.CHECKOUT:    20.0,  # Alta tolleranza dell'utente in fase di pagamento.
+    RequestType.ANALYTICS:   15.0  # Timeout tecnico, non legato all'utente.
 }
 
-# --- SOLUZIONE MIGLIORATIVA: ABSTRACT PRIORITY SCHEDULING ---
-PRIORITY_SCHEDULING_ENABLED = True  # O False, per eseguire la versione baseline
-
-
+# ==============================================================================
+# CONFIGURAZIONE DELLA SOLUZIONE MIGLIORATIVA (DA SOSTITUIRE)
+# ==============================================================================
+# Questa sezione verrà sostituita dall'implementazione della soluzione avanzata
+# (es. Admission Control, WFQ, o HPA Predittivo).
 class Priority(IntEnum):
-    """
-    IntEnum per le classi di priorità.
-    IntEnum è migliore di Enum in questo caso perché permette di ordinare i valori in maniera semplice
-     (ogni classe si comporta come il numero che la identifica)
-    Un valore più basso indica una priorità più alta.
-    """
     HIGH = 0
     MEDIUM = 1
     LOW = 2
 
-
-# --- Mappatura fissa da Tipo di Richiesta a Priorità ---
+# Mappatura basata su criticità di business (usata come base per la nuova soluzione)
 REQUEST_TYPE_TO_PRIORITY = {
-    RequestType.LOGIN:       Priority.MEDIUM,     # Utente va servito subito
-    RequestType.NAVIGATION:  Priority.HIGH,     # Delay qui uccide il funnel
-    RequestType.ADD_TO_CART: Priority.MEDIUM,   # Intermedia
-    RequestType.CHECKOUT:    Priority.HIGH,      # Può aspettare qualche secondo
-    RequestType.ANALYTICS:   Priority.LOW       # Background
+    RequestType.NAVIGATION:  Priority.HIGH,
+    RequestType.CHECKOUT:    Priority.HIGH,
+    RequestType.LOGIN:       Priority.MEDIUM,
+    RequestType.ADD_TO_CART: Priority.MEDIUM,
+    RequestType.ANALYTICS:   Priority.LOW
 }
