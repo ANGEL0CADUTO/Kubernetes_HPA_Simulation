@@ -22,7 +22,13 @@ class HPA:
             yield self.env.timeout(self.config.HPA_SYNC_PERIOD)
 
             num_active_pods = len(self.simulator.active_pods)
-            current_queue_length = len(self.simulator.request_queue.items)
+
+            # --------------------------------------------------------------------
+            # MODIFICA CHIAVE:
+            # Non leggiamo più da una coda centrale inesistente.
+            # Calcoliamo la lunghezza totale sommando le code di tutti i worker.
+            current_queue_length = sum(len(w.queue.items) for w in self.simulator.worker_nodes)
+            # --------------------------------------------------------------------
 
             if num_active_pods > 0:
                 avg_queue_per_pod = current_queue_length / num_active_pods

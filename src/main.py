@@ -29,18 +29,29 @@ def main():
 
     arrival_scenarios = {
         "tasso_70": lambda t: 85,
-        #"tasso_85": lambda t: 170,
-        # "tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
+        "tasso_85": lambda t: 170,
+       #"tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
     }
 
     rng_manager = RNGManager(master_seed=config.LEHMER_SEED)
     all_results = {scenario_name: {} for scenario_name in arrival_scenarios}
 
+    # --- CICLO ESTERNO: REPLICHE ---
     for i in range(NUM_REPLICATIONS):
         print(f"\n{'='*30} INIZIO REPLICA {i + 1}/{NUM_REPLICATIONS} {'='*30}")
+
+        # LA CHIAMATA ORA E' QUI: nel ciclo esterno, prima del ciclo interno.
+        # Generiamo UN SOLO set di stream e UN SOLO seed per l'INTERA replica.
+        replication_streams, rep_seed = rng_manager.get_replication_streams()
+        print(f"--- Replica {i+1} utilizzerà il SEED master per tutti gli scenari: {rep_seed} ---")
+
+        # --- CICLO INTERNO: SCENARI ---
         for scenario_name, lambda_fn in arrival_scenarios.items():
             print(f"\n--- ESECUZIONE SCENARIO: {scenario_name.upper()} ---")
-            replication_streams, rep_seed = rng_manager.get_replication_streams()
+
+            # NON generiamo più un nuovo stream qui, ma usiamo quello definito sopra.
+            # Questo garantisce che 'replication_streams' sia identico per
+            # 'tasso_70' e 'tasso_85' all'interno della stessa replica 'i'.
 
             # --- ESECUZIONE BASELINE ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO BASELINE (FIFO) ---")
@@ -65,7 +76,7 @@ def main():
             all_results[scenario_name][i] = {
                 'baseline': metrics_base,
                 'priority': metrics_prio,
-                'seed': rep_seed
+                'seed': rep_seed # Il seed salvato sarà lo stesso per tutti gli scenari di questa replica
             }
             # --- Generazione report dettagliati per QUESTA specifica replica ---
             print(f"\n--- Generazione report per {scenario_name}, Replica {i+1} ---")
@@ -149,6 +160,56 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     print("\n--- Fine dell'analisi Steady-State ---")
 
 
+def print_final_debug_summary(all_results: dict):
+    """
+    Stampa un riepilogo di debug con le metriche chiave per ogni singola esecuzione.
+    Include controlli di consistenza e metriche di performance di alto livello.
+    """
+    print("\n" + "="*45 + " RIASSUNTO DI DEBUG FINALE " + "="*45)
+
+    for scenario_name, replications in all_results.items():
+        print(f"\n--- SCENARIO: {scenario_name.upper()} ---")
+        for i, rep_data in replications.items():
+            metrics_base = rep_data['baseline']
+            metrics_prio = rep_data['priority']
+            seed = rep_data['seed']
+
+            # --- Calcoli per il Baseline ---
+            total_b = metrics_base.total_requests_generated
+            served_b = metrics_base.total_requests_served
+            lost_b = sum(metrics_base.requests_timed_out_data.values())
+            queue_remaining_b = total_b - served_b - lost_b
+            consistency_check_b = "OK" if queue_remaining_b >= 0 else "ERRORE"
+
+            # --- FIX: Convertiamo esplicitamente la media in float ---
+            # Aggiungiamo anche un controllo nel caso in cui non ci siano state richieste servite
+            if metrics_base.global_response_times_welford.mean is not None:
+                avg_resp_time_b = float(metrics_base.global_response_times_welford.item())
+            else:
+                avg_resp_time_b = 0.0
+
+            # --- Calcoli per il Prioritario ---
+            total_p = len(metrics_prio.request_generation_timestamps)
+            served_p = sum(metrics_prio.requests_completed_by_priority.values())
+            lost_p = sum(metrics_prio.requests_timed_out_by_priority.values())
+            queue_remaining_p = total_p - served_p - lost_p
+            consistency_check_p = "OK" if queue_remaining_p >= 0 else "ERRORE"
+
+            # --- FIX: Convertiamo esplicitamente la media in float ---
+            if metrics_prio.global_welford_response.mean is not None:
+                avg_resp_time_p = float(metrics_prio.global_welford_response.item())
+            else:
+                avg_resp_time_p = 0.0
+
+            print(f"  Replica {i+1} (Seed: {seed}):")
+            print(f"    [Baseline]   | "
+                  f"Generati: {total_b:<5} | Serviti: {served_b:<5} | Persi: {lost_b:<5} | In Coda: {queue_remaining_b:<4} | "
+                  f"Check: {consistency_check_b:<7} | E[T]: {avg_resp_time_b:.4f}s")
+
+            print(f"    [Prioritario]| "
+                  f"Generati: {total_p:<5} | Serviti: {served_p:<5} | Persi: {lost_p:<5} | In Coda: {queue_remaining_p:<4} | "
+                  f"Check: {consistency_check_p:<7} | E[T]: {avg_resp_time_p:.4f}s")
+
 
 if __name__ == "__main__":
 
@@ -163,6 +224,8 @@ if __name__ == "__main__":
 
         # Chiamiamo il metodo corretto per generare i grafici delle tracce
         final_plotter.plot_replication_traces_per_scenario(all_results, num_replications)
+        # AGGIUNGI QUESTA CHIAMATA
+        print_final_debug_summary(all_results)
 
     # 3. Esegui l'analisi steady-state se è abilitata nel config
     #    (Questa parte è separata e non è stata toccata)
