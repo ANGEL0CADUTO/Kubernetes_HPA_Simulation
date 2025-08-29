@@ -12,6 +12,7 @@ from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
 from analysis.plotter import Plotter
+from analysis.new_plotter import newPlotter
 from analysis.validation_plotter import ValidationPlotter
 from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
 from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
@@ -159,10 +160,10 @@ if __name__ == "__main__":
     if all_results:
         # Inizializziamo un Plotter. I dati passati all'init sono irrilevanti
         # per il metodo di plotting aggregato, che riceve tutto ciò di cui ha bisogno.
-        final_plotter = Plotter(None, None, config)
+        final_plotter = newPlotter(None, None, config)
 
         # Chiamiamo il metodo corretto per generare i grafici delle tracce
-        final_plotter.plot_replication_traces_per_scenario(all_results, num_replications)
+        final_plotter.plot_replication_traces_per_scenario(all_results)
 
     # 3. Esegui l'analisi steady-state se è abilitata nel config
     #    (Questa parte è separata e non è stata toccata)
