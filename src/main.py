@@ -1,23 +1,15 @@
 # File: main.py (VERSİONE CORRETTA E AGGIORNATA)
 
-import numpy as np
-import os
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
+from analysis.plotter import Plotter
 from src import config
 from src.simulation.simulator import Simulator
 from src.simulation.simulator_with_priority import SimulatorWithPriority
+# MODIFICATO: L'import ora carica la NUOVA classe che gestisce gli stream
+from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per chiarezza
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from analysis.plotter import Plotter
-from analysis.validation_plotter import ValidationPlotter
-from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
-from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
+from utils.acs import batch_means, compute_batch_size
 
-# MODIFICATO: L'import ora carica la NUOVA classe che gestisce gli stream
-from src.utils.lehmer_rng import LehmerRNG as RNGManager # Usiamo un alias per chiarezza
 
 def main():
     """
@@ -65,13 +57,14 @@ def main():
 
             # --- ESECUZIONE MIGLIORATA ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
-            metrics_prio = MetricsWithPriority(config)
-            simulator_prio = SimulatorWithPriority(
-                config_module=config, metrics=metrics_prio,
+            metrics_prio = MetricsWithPriority(config_module=config)
+            simulator_prio = SimulatorWithPriority(config=config,
+                metrics=metrics_prio,
                 arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
-                service_rng=replication_streams['service'], lambda_function=lambda_fn
-            )
+                service_rng=replication_streams['service'], lambda_function=lambda_fn)
             simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
+
+
 
             all_results[scenario_name][i] = {
                 'baseline': metrics_base,
@@ -148,15 +141,40 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-    print("\n--- Generazione Report Steady-State ---")
-    analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
-    analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
-    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
-    steady_plotter.generate_steady_state_report(
-        analyzer_baseline=analyzer_baseline, analyzer_prio=analyzer_prio,
-        warmup=config.WARM_UP_TO_STEADY, batches=config.NUM_BATCHES,
-        output_dir=output_dir
+
+    # --- CALCOLO BATCH MEANS ---
+    #POSSIAMO SCEGLIERE QUALI SAMPLE USARE SE get_all_response_time_with_timestamps o get_response_time_by_type(req_type)
+    print("\n--- Calcolo Batch Means ---")
+
+    #RIMUOVO WARM UP
+    metrics_baseline.remove_warmup(config.WARM_UP_TO_STEADY)
+
+    samples_baseline = [v for _, v in metrics_baseline.get_all_response_times_with_timestamps()]
+    samples_prio = [v for _, v in metrics_prio.get_all_response_times_with_timestamps()]
+
+    # calcolo b ottimale per baseline
+    b_base, rho_base = compute_batch_size(
+        samples_baseline, k=config.BATCH_K, threshold=config.BATCH_THRESHOLD
     )
+    mean_base, ci95_base = batch_means(samples_baseline, b_base, config.BATCH_K)
+    print(f"Baseline: b={b_base}, rho1={rho_base:.3f}, media={mean_base}, IC95={ci95_base}")
+
+    # calcolo b ottimale per priorità
+    b_prio, rho_prio = compute_batch_size(
+        samples_prio, k=config.BATCH_K, threshold=config.BATCH_THRESHOLD
+    )
+    mean_prio, ci95_prio = batch_means(samples_prio, b_prio, config.BATCH_K)
+    print(f"Priorità: b={b_prio}, rho1={rho_prio:.3f}, media={mean_prio}, IC95={ci95_prio}")
+
+    print("\n--- Generazione Report Steady-State ---")
+    #analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
+    #analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
+    #steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
+    #steady_plotter.generate_steady_state_report(
+        #analyzer_baseline=analyzer_baseline, analyzer_prio=analyzer_prio,
+        #warmup=config.WARM_UP_TO_STEADY, batches={ "baseline" : (mean_base,ci95_base,b_base),"priority": (mean_prio,ci95_prio,b_prio) },
+        #output_dir=output_dir
+    #)
     print("\n--- Fine dell'analisi Steady-State ---")
 
 

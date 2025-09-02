@@ -11,7 +11,8 @@ LEHMER_SEED = 123456789     # Seed per la riproducibilità
 # --- ANALISI A ORIZZONTE INFINITO ---
 STEADY_SIMULATION_TIME = 30000  # Durata della simulazione lunga per l'analisi steady-state
 WARM_UP_TO_STEADY = 2500        # Periodo di transitorio da scartare, determinato dall'analisi di convergenza
-NUM_BATCHES = 40                # Numero di batch per l'analisi Batch Means (min. 30-40 per robustezza statistica)
+BATCH_K = 64        # numero di batch
+BATCH_THRESHOLD = 0.2  # soglia autocorrelazione
 CONFIDENCE_LEVEL = 0.95
 STEADY_ENABLED = False           # Flag per attivare l'esecuzione della simulazione lunga
 
