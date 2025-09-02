@@ -28,6 +28,9 @@ class MetricsWithPriority:
         self.global_welford_wait = Welford()
 
 
+        self.requests_that_waited = 0
+        self.response_times_history_by_prio = defaultdict(list)
+
         # Metriche di sistema (uguali alla baseline)
         self.timestamps = []
         self.pod_counts = []
@@ -58,6 +61,7 @@ class MetricsWithPriority:
         self.response_times_by_req_type = defaultdict(list)
         self.wait_times_by_req_type = defaultdict(list)
         # -----------------------------------------------------------------
+
 
     def record_request_generation(self, timestamp: float, priority: Priority, req_type: RequestType):
         """Registra il timestamp di quando una richiesta è generata."""
@@ -112,6 +116,12 @@ class MetricsWithPriority:
         self.wait_times_by_req_type[req_type].append(wait_time)
 
         # ------------------------------------------------------------------
+        if wait_time > 1e-9: # Usiamo una piccola tolleranza per i float
+            self.requests_that_waited += 1
+
+        self.response_times_history_by_prio[request.priority].append((completion_time, response_time))
+
+
 
     def record_timeout(self, request: PriorityRequest, timestamp: float):
         """Registra una richiesta che è andata in timeout (se implementato)."""

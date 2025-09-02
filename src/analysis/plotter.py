@@ -15,26 +15,22 @@ plt.style.use('ggplot')
 
 # Funzione helper per calcolare le medie, rimane invariata
 def _calculate_overall_avg(times_by_type: dict):
-    """Metodo helper per calcolare la media complessiva da un dizionario di liste."""
     all_times = [t for times_list in times_by_type.values() for t in times_list]
     return np.mean(all_times) if all_times else 0
 
-
 class Plotter:
-    def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, config):
+    def __init__(self, metrics, metrics_prio, config_module):
         self.metrics = metrics
         self.metrics_prio = metrics_prio
-        self.config = config
+        self.config = config_module
 
-    # --- FUNZIONE HELPER PER IL SALVATAGGIO ---
     def _save_plot(self, output_dir, filename, fig):
-        """Helper per creare la directory e salvare la figura."""
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
+        if not os.path.exists(output_dir): os.makedirs(output_dir)
         save_path = os.path.join(output_dir, filename)
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close(fig) # Chiude la figura per liberare memoria
+        plt.close(fig)
+        print(f"Grafico salvato in: {save_path}")
+
 
     def plot_queue_history(self, output_dir='plots', filename='queue_length_history.png'):
         print(f"Generazione storico coda -> {os.path.join(output_dir, filename)}")
@@ -376,3 +372,191 @@ class Plotter:
             fig.savefig(save_path, dpi=300)
             plt.close(fig)
             print(f"Grafico delle tracce per '{scenario_name}' salvato in: {save_path}")
+
+    def plot_dynamic_load_dashboard(self, output_dir='plots', run_prefix='run'):
+        """
+        Crea un dashboard per analizzare la risposta del sistema a un carico dinamico.
+        Mostra il numero di pod e il tempo di risposta medio (su finestra mobile) nel tempo.
+        """
+        print(f"Generazione dashboard carico dinamico -> {os.path.join(output_dir, f'{run_prefix}_dynamic_dashboard.png')}")
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 12), sharex=True)
+        fig.suptitle(f"Risposta al Picco di Carico - {run_prefix}", fontsize=20, fontweight='bold')
+
+        window_size = 50 # Finestra per la media mobile del tempo di risposta
+
+        # --- Dati per il Grafico 1: Modello Baseline (FIFO) ---
+        ax1_twin = ax1.twinx()
+        ax1.set_title("Modello Baseline (FIFO)", fontsize=16)
+
+        # Curva 1: Numero di Pod
+        if self.metrics.pod_count_history:
+            times_pod, counts_pod = zip(*self.metrics.pod_count_history)
+            ax1.plot(times_pod, counts_pod, color='blue', linestyle='--', linewidth=2.5, label='Numero di Pod')
+        ax1.set_ylabel("Numero di Pod Attivi", color='blue', fontsize=14)
+        ax1.tick_params(axis='y', labelcolor='blue')
+        ax1.set_ylim(bottom=0)
+
+        # Curva 2: Tempo di Risposta (Media Mobile)
+        all_responses_base = self.metrics.get_all_response_times_with_timestamps()
+        if len(all_responses_base) > window_size:
+            times_resp, values_resp = zip(*all_responses_base)
+            moving_avg = pd.Series(values_resp).rolling(window=window_size).mean()
+            ax1_twin.plot(times_resp, moving_avg, color='red', linewidth=2, label=f'Tempo Risposta Medio (finestra {window_size})')
+        ax1_twin.set_ylabel("Tempo di Risposta Medio (s)", color='red', fontsize=14)
+        ax1_twin.tick_params(axis='y', labelcolor='red')
+        ax1_twin.set_ylim(bottom=0)
+
+        # --- Dati per il Grafico 2: Modello a Priorità ---
+        ax2_twin = ax2.twinx()
+        ax2.set_title("Modello Migliorato (Priorità)", fontsize=16)
+
+        # Curva 1: Numero di Pod
+        if self.metrics_prio.pod_counts:
+            ax2.plot(self.metrics_prio.timestamps, self.metrics_prio.pod_counts, color='blue', linestyle='--', linewidth=2.5, label='Numero di Pod')
+        ax2.set_ylabel("Numero di Pod Attivi", color='blue', fontsize=14)
+        ax2.tick_params(axis='y', labelcolor='blue')
+        ax2.set_ylim(bottom=0)
+
+        # Curva 2: Tempo di Risposta (Media Mobile)
+        all_responses_prio = self.metrics_prio.get_all_response_times_with_timestamps()
+        if len(all_responses_prio) > window_size:
+            times_resp_p, values_resp_p = zip(*all_responses_prio)
+            moving_avg_p = pd.Series(values_resp_p).rolling(window=window_size).mean()
+            ax2_twin.plot(times_resp_p, moving_avg_p, color='red', linewidth=2, label=f'Tempo Risposta Medio (finestra {window_size})')
+        ax2_twin.set_ylabel("Tempo di Risposta Medio (s)", color='red', fontsize=14)
+        ax2_twin.tick_params(axis='y', labelcolor='red')
+        ax2_twin.set_ylim(bottom=0)
+
+        ax2.set_xlabel("Tempo di Simulazione (s)", fontsize=14)
+        fig.legend(loc='upper right', bbox_to_anchor=(0.9, 0.9))
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        self._save_plot(output_dir, f"{run_prefix}_dynamic_dashboard.png", fig)
+
+    def plot_dynamic_load_dashboard(self, output_dir='plots', run_prefix='run', peak_start=0, peak_end=0):
+        """
+        Crea un dashboard per analizzare la risposta del sistema a un carico dinamico.
+        ORA INCLUDE UNA REGIONE OMBREGGIATA PER INDICARE IL PICCO DI CARICO.
+        """
+        print(f"Generazione dashboard carico dinamico -> {os.path.join(output_dir, f'{run_prefix}_dynamic_dashboard.png')}")
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 12), sharex=True)
+        fig.suptitle(f"Risposta al Picco di Carico - {run_prefix}", fontsize=20, fontweight='bold')
+
+        window_size = 50
+
+        # --- Grafico 1: Modello Baseline (FIFO) ---
+        ax1_twin = ax1.twinx(); ax1.set_title("Modello Baseline (FIFO)", fontsize=16)
+
+        if self.metrics.pod_count_history:
+            times_pod, counts_pod = zip(*self.metrics.pod_count_history)
+            ax1.plot(times_pod, counts_pod, color='blue', linestyle='--', linewidth=2.5, label='Numero di Pod')
+        ax1.set_ylabel("Numero di Pod Attivi", color='blue', fontsize=14); ax1.tick_params(axis='y', labelcolor='blue'); ax1.set_ylim(bottom=0)
+
+        all_responses_base = self.metrics.get_all_response_times_with_timestamps()
+        if len(all_responses_base) > window_size:
+            times_resp, values_resp = zip(*all_responses_base)
+            moving_avg = pd.Series(values_resp).rolling(window=window_size).mean()
+            ax1_twin.plot(times_resp, moving_avg, color='red', linewidth=2, label=f'Tempo Risposta Medio (finestra {window_size})')
+        ax1_twin.set_ylabel("Tempo di Risposta Medio (s)", color='red', fontsize=14); ax1_twin.tick_params(axis='y', labelcolor='red'); ax1_twin.set_ylim(bottom=0)
+
+        # Aggiungiamo l'area del picco
+        ax1.axvspan(peak_start, peak_end, color='gray', alpha=0.2, label='Periodo di Picco')
+
+        # --- Grafico 2: Modello a Priorità ---
+        ax2_twin = ax2.twinx(); ax2.set_title("Modello Migliorato (Priorità)", fontsize=16)
+
+        if self.metrics_prio.pod_counts:
+            ax2.plot(self.metrics_prio.timestamps, self.metrics_prio.pod_counts, color='blue', linestyle='--', linewidth=2.5, label='Numero di Pod')
+        ax2.set_ylabel("Numero di Pod Attivi", color='blue', fontsize=14); ax2.tick_params(axis='y', labelcolor='blue'); ax2.set_ylim(bottom=0)
+
+        all_responses_prio = self.metrics_prio.get_all_response_times_with_timestamps()
+        if len(all_responses_prio) > window_size:
+            times_resp_p, values_resp_p = zip(*all_responses_prio)
+            moving_avg_p = pd.Series(values_resp_p).rolling(window=window_size).mean()
+            ax2_twin.plot(times_resp_p, moving_avg_p, color='red', linewidth=2, label=f'Tempo Risposta Medio (finestra {window_size})')
+        ax2_twin.set_ylabel("Tempo di Risposta Medio (s)", color='red', fontsize=14); ax2_twin.tick_params(axis='y', labelcolor='red'); ax2_twin.set_ylim(bottom=0)
+
+        # Aggiungiamo l'area del picco
+        ax2.axvspan(peak_start, peak_end, color='gray', alpha=0.2, label='Periodo di Picco')
+
+        ax2.set_xlabel("Tempo di Simulazione (s)", fontsize=14)
+
+        # Gestiamo le legende per evitare duplicati
+        lines1, labels1 = ax1.get_legend_handles_labels(); lines1_twin, labels1_twin = ax1_twin.get_legend_handles_labels()
+        ax1.legend(lines1 + lines1_twin, labels1 + labels1_twin, loc='upper left')
+
+        lines2, labels2 = ax2.get_legend_handles_labels(); lines2_twin, labels2_twin = ax2_twin.get_legend_handles_labels()
+        ax2.legend(lines2 + lines2_twin, labels2 + labels2_twin, loc='upper left')
+
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+        self._save_plot(output_dir, f"{run_prefix}_dynamic_dashboard.png", fig)
+
+    def plot_dynamic_analysis_dashboards(self, output_dir='plots', run_prefix='run', peak_start=0, peak_end=0, base_load=0, peak_load=0):
+        """
+        Crea due dashboard separati per l'analisi del carico dinamico.
+        VERSione CORRETTA E BLINDATA.
+        """
+        print(f"Generazione dashboard di analisi dinamica -> {output_dir}")
+
+        sim_time = self.config.SIMULATION_TIME
+        window_size = 50
+        Y_AXIS_LIMIT = 5.0
+
+        # Preparazione Dati Comuni
+        all_responses_base = self.metrics.get_all_response_times_with_timestamps()
+        base_times, base_ma = (None, None)
+        if len(all_responses_base) > window_size:
+            times, values = zip(*all_responses_base); base_times = pd.Series(times)
+            base_ma = pd.Series(values).rolling(window=window_size).mean()
+
+        prio_ma_data = {}
+        for prio, history in self.metrics_prio.response_times_history_by_prio.items():
+            if len(history) > window_size:
+                history.sort(key=lambda x: x[0]); times, values = zip(*history)
+                prio_ma_data[prio] = {'times': pd.Series(times), 'ma': pd.Series(values).rolling(window=window_size).mean()}
+
+        # Grafico 1: Confronto Efficacia
+        fig1, ax1 = plt.subplots(figsize=(18, 7)); ax1.set_title(f"Efficacia della Prioritizzazione - {run_prefix}", fontsize=18)
+        ax1.set_xlabel("Tempo di Simulazione (s)", fontsize=12); ax1.set_ylabel("Tempo di Risposta Medio (s)", fontsize=12)
+        ax1.grid(True, which='both', linestyle='--', alpha=0.7); ax1.set_ylim(bottom=0, top=Y_AXIS_LIMIT)
+        if base_times is not None:
+            ax1.plot(base_times, base_ma, color='royalblue', linestyle='--', linewidth=2.5, label='Baseline (FIFO) - Media Globale')
+        if self.config.Priority.HIGH in prio_ma_data:
+            data = prio_ma_data[self.config.Priority.HIGH]
+            ax1.plot(data['times'], data['ma'], color='limegreen', linewidth=2, label='Migliorato - Priorità HIGH')
+        ax_load1 = ax1.twinx()
+        load_times = [0, peak_start, peak_start, peak_end, peak_end, sim_time]
+        load_values = [base_load, base_load, peak_load, peak_load, base_load, base_load]
+        ax_load1.plot(load_times, load_values, color='red', linestyle=':', linewidth=2.5, alpha=0.9, label='Tasso di Arrivo (Carico)')
+        ax_load1.set_ylabel("Tasso di Arrivo (req/s)", color='red', fontsize=12); ax_load1.tick_params(axis='y', labelcolor='red')
+        ax_load1.set_ylim(bottom=0, top=peak_load * 1.2)
+        lines, labels = ax1.get_legend_handles_labels(); lines2, labels2 = ax_load1.get_legend_handles_labels()
+        ax1.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=12); fig1.tight_layout()
+        self._save_plot(output_dir, f"{run_prefix}_1_effectiveness_comparison.png", fig1)
+
+        # Grafico 2: Analisi Dettagliata delle Priorità
+        fig2, ax2 = plt.subplots(figsize=(18, 7)); ax2.set_title(f"Esperienza Utente per Classe di Priorità - {run_prefix}", fontsize=18)
+        ax2.set_xlabel("Tempo di Simulazione (s)", fontsize=12); ax2.set_ylabel("Tempo di Risposta Medio (s)", fontsize=12)
+        ax2.grid(True, which='both', linestyle='--', alpha=0.7); ax2.set_ylim(bottom=0, top=Y_AXIS_LIMIT)
+        colors = {self.config.Priority.HIGH: 'green', self.config.Priority.MEDIUM: 'orange', self.config.Priority.LOW: 'purple'}
+
+        # --- FIX DEFINITIVO E BLINDATO ---
+        # Iteriamo sulla lista di Enum Priority che sappiamo essere corretta,
+        # e poi cerchiamo i dati corrispondenti nel dizionario.
+        for prio_enum in self.config.Priority:
+            # Usiamo .get() per evitare errori se una priorità non ha dati
+            data = prio_ma_data.get(prio_enum)
+            if data is not None:
+                # Ora siamo sicuri che prio_enum è un Enum e ha l'attributo .name
+                ax2.plot(data['times'], data['ma'], color=colors.get(prio_enum, 'black'), linewidth=2, label=f'Priorità {prio_enum.name}')
+        # --- FINE FIX ---
+
+        ax_load2 = ax2.twinx()
+        ax_load2.plot(load_times, load_values, color='red', linestyle=':', linewidth=2.5, alpha=0.9, label='Tasso di Arrivo (Carico)')
+        ax_load2.set_ylabel("Tasso di Arrivo (req/s)", color='red', fontsize=12); ax_load2.tick_params(axis='y', labelcolor='red')
+        ax_load2.set_ylim(bottom=0, top=peak_load * 1.2)
+        lines, labels = ax2.get_legend_handles_labels(); lines2, labels2 = ax_load2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=12); fig2.tight_layout()
+        self._save_plot(output_dir, f"{run_prefix}_2_priority_experience.png", fig2)
