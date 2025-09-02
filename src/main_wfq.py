@@ -65,7 +65,7 @@ def main_wfq():
         simulator_wfq.run(config.SIMULATION_TIME)
 
         # --- PLOTTING DEI RISULTATI PER QUESTA REPLICA ---
-        output_folder = f"output/final_analysis/replica_{i+1}"
+        output_folder = f"output/wfq_analysis/replica_{i+1}"
         plotter = PlotterWFQ(metrics_base, metrics_prio, metrics_wfq, config)
         plotter.generate_final_dashboards(
             output_dir=output_folder,
