@@ -26,11 +26,13 @@ class SimulatorWFQ:
 
         # Pesi di partenza, verranno cambiati dinamicamente dal metrics_recorder
         self.NORMAL_WEIGHTS = {
-            self.config.Priority.HIGH: 50,
-            self.config.Priority.MEDIUM: 30,
-            self.config.Priority.LOW: 20
+            self.config.Priority.HIGH: 94,
+            self.config.Priority.MEDIUM: 5,
+            self.config.Priority.LOW: 1
         }
         self.request_queue = WFQStore(self.env, weights=self.NORMAL_WEIGHTS)
+
+        self.shedding_enabled = False
 
         self.active_pods = []; self.next_pod_id = 0; self.available_pod_ids = set()
 
@@ -43,8 +45,28 @@ class SimulatorWFQ:
             yield self.env.timeout(time_to_next)
             req_types, req_probs = self.traffic_profiler.get_current_probabilities()
             chosen_type = self.choice_rng.choice(req_types, p=req_probs)
-            service_time = self.service.get_service_time(chosen_type)
+
             prio = self.config.REQUEST_TYPE_TO_PRIORITY[chosen_type]
+
+            # --- LOGICA DI LOAD SHEDDING AGGIORNATA ---
+            if self.shedding_enabled and prio > self.config.Priority.MEDIUM:
+
+                # Creiamo un oggetto richiesta "fittizio" solo per registrarne il fallimento
+                # Non ha bisogno di service_time o timeout reali
+                req_id_counter += 1
+                rejected_request = PriorityRequest(
+                    request_id=req_id_counter, req_type=chosen_type,
+                    arrival_time=self.env.now, timeout=0,
+                    service_time=0, priority=prio
+                )
+                # La registriamo come fallita
+                self.metrics.record_request_failure(rejected_request, self.env.now)
+
+                continue # Saltiamo al prossimo ciclo
+            # --- FINE LOGICA AGGIORNATA ---
+
+
+            service_time = self.service.get_service_time(chosen_type)
             timeout = self.config.REQUEST_TIMEOUTS[chosen_type]
             req_id_counter += 1
             new_request = PriorityRequest(
@@ -74,12 +96,14 @@ class SimulatorWFQ:
 
     def metrics_recorder(self):
         ALERT_THRESHOLD = 100
+        SHEDDING_TIME_THRESHOLD = 300
         CRISIS_WEIGHTS = {
-            self.config.Priority.HIGH: 90,
-            self.config.Priority.MEDIUM: 10,
+            self.config.Priority.HIGH: 98,
+            self.config.Priority.MEDIUM: 2,
             self.config.Priority.LOW: 0
         }
         in_crisis_mode = False
+        time_crisis_started = -1
         DEBUG_INTERVAL = 50.0; last_debug_time = 0.0
         served_since_last_debug = defaultdict(int)
 
@@ -87,12 +111,26 @@ class SimulatorWFQ:
             yield self.env.timeout(1)
             total_queue_len = len(self.request_queue.items)
 
+            # --- LOGICA DI CONTROLLO A DUE STADI ---
             if total_queue_len > ALERT_THRESHOLD and not in_crisis_mode:
+                # 1. ENTRA IN MODALITA' CRISI
                 in_crisis_mode = True
                 self.request_queue.update_weights(CRISIS_WEIGHTS)
+                time_crisis_started = self.env.now # Avvia il timer
+
             elif total_queue_len <= ALERT_THRESHOLD and in_crisis_mode:
+                # 2. RITORNA ALLA NORMALITA'
                 in_crisis_mode = False
                 self.request_queue.update_weights(self.NORMAL_WEIGHTS)
+                time_crisis_started = -1
+                self.shedding_enabled = False # Disattiva il load shedding
+
+            # 3. ATTIVA IL LOAD SHEDDING DI EMERGENZA
+            if in_crisis_mode and not self.shedding_enabled:
+                if (self.env.now - time_crisis_started) > SHEDDING_TIME_THRESHOLD:
+                    print(f"{self.env.now:.2f} [CRISIS]: Crisi prolungata per >{SHEDDING_TIME_THRESHOLD}s. ATTIVO LOAD SHEDDING.")
+                    self.shedding_enabled = True
+            # --- FINE LOGICA DI CONTROLLO ---
 
             pod_count = len(self.active_pods)
             queue_lengths_per_prio = defaultdict(int)
@@ -136,11 +174,14 @@ class SimulatorWFQ:
                 self.available_pod_ids.add(pod.id)
             self.active_pods = self.active_pods[:desired_replicas]
 
+
     def timeout_watcher(self, request: PriorityRequest):
         yield self.env.timeout(request.timeout)
         if not request.is_serviced:
             request.timed_out = True
-            self.metrics.record_timeout(request, self.env.now)
+            # Usa il nuovo metodo unificato
+            self.metrics.record_request_failure(request, self.env.now)
+
 
     def run(self, simulation_duration: float):
         self.env.process(self.request_generator())

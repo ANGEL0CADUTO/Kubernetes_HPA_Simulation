@@ -129,6 +129,12 @@ class MetricsWithPriority:
         self.requests_timed_out_by_req_type[request.req_type] += 1
         self.timeout_history.append((timestamp, request.req_type))   # <-- NUOVO
 
+    def record_request_failure(self, request: PriorityRequest, timestamp: float):
+        """Metodo unificato per registrare una richiesta fallita (timeout o rifiutata)."""
+        self.requests_timed_out_by_priority[request.priority] += 1
+        self.requests_timed_out_by_req_type[request.req_type] += 1
+        self.timeout_history.append((timestamp, request.req_type))
+
 
     def to_dataframe(self):
         """
