@@ -29,8 +29,8 @@ MAX_PODS = 24               # Limite di budget/risorse (es. 8 pod max per worker
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
 # Giustificazione: Parametri standard di Kubernetes (API v2) per un HPA reattivo.
 HPA_ENABLED = True
-HPA_SYNC_PERIOD = 15        # Intervallo di polling (`--horizontal-pod-autoscaler-sync-period`).
-TARGET_QUEUE_LENGTH_PER_POD = 5 # Metrica custom per HPA: scala se ci sono più di 5 richieste in attesa per pod.
+HPA_SYNC_PERIOD = 10        # Intervallo di polling (`--horizontal-pod-autoscaler-sync-period`).
+TARGET_QUEUE_LENGTH_PER_POD = 1 # Metrica custom per HPA: scala se ci sono più di 5 richieste in attesa per pod.
 MAX_SCALE_STEP = 4          # Kubernetes 1.18+ può aggiungere/rimuovere fino a 4 pod ogni 15s.
 SCALE_UP_COOLDOWN = 60      # Cooldown prima di un altro scale-up.
 SCALE_DOWN_COOLDOWN = 300   # Cooldown di 5 minuti prima di uno scale-down (standard per evitare oscillazioni).
@@ -52,11 +52,11 @@ class RequestType(Enum):
 # di settore e misurazioni empiriche (Tasso di conversione ≈2.5%, Bounce Rate ≈38%,
 # Cart Abandonment Rate ≈70%).
 TRAFFIC_PROFILE = {
-    RequestType.NAVIGATION:  0.70,
+    RequestType.NAVIGATION:  0.60,
     RequestType.LOGIN:       0.15,
     RequestType.ADD_TO_CART: 0.10,
     RequestType.CHECKOUT:    0.025,
-    RequestType.ANALYTICS:   0.025
+    RequestType.ANALYTICS:   0.125
 }
 
 # --- TEMPI DI SERVIZIO ---
@@ -74,7 +74,21 @@ SERVICE_TIME_CONFIG = {
     RequestType.NAVIGATION:  {"dist": "lognormal", "params": get_lognormal_params(mean=0.30, stdev=0.15)},
     RequestType.ADD_TO_CART: {"dist": "lognormal", "params": get_lognormal_params(mean=0.50, stdev=0.25)},
     RequestType.CHECKOUT:    {"dist": "lognormal", "params": get_lognormal_params(mean=0.85, stdev=0.50)},
-    RequestType.ANALYTICS:   {"dist": "exponential", "params": {"scale": 0.05}}
+    RequestType.ANALYTICS:   {
+        "dist": "mixture",
+        "params": [
+            {
+                "prob": 0.9, # 90% dei casi
+                "dist": "exponential",
+                "params": {"scale": 0.05} # sono richieste "light" e veloci
+            },
+            {
+                "prob": 0.1, # 10% dei casi
+                "dist": "lognormal",
+                "params": get_lognormal_params(mean=1.2, stdev=0.5) # sono richieste "heavy" e lente
+            }
+        ]
+    }
 }
 
 # --- TIMEOUT (Pazienza dell'utente) ---

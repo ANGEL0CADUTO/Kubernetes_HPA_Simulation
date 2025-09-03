@@ -8,6 +8,10 @@ from src.utils.metrics_with_priority import MetricsWithPriority
 from analysis.plotter import Plotter
 from src.utils.lehmer_rng import LehmerRNG as RNGManager
 
+
+"""
+CLASSE OBSOLETA, PER ADESSO IN MAIN WFQ FACCIAMO GIA UNA SIMULAZIONE DINAMICA CON UN PICCO, IN FUTURO QUI AVREMO UNA SIMULAZIONE CON TASSO VARIABILE NEL TEMPO(MAGARI USANDO IL SIN)
+"""
 def main_dynamic_analysis():
     print("="*80)
     print("FASE 2: ANALISI DEL SISTEMA CON CARICO DINAMICO (PICCO DI TRAFFICO)")

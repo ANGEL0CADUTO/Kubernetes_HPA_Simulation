@@ -1,45 +1,75 @@
+# File: src/utils/wfq_store.py
+
 import simpy
+import heapq
 import numpy as np
 from src.config import Priority
 
 class WFQStore:
+    """
+    Implementazione di una coda Weighted Fair Queuing (WFQ) basata sulla
+    teoria standard dei Finish Tag, per SimPy.
+    """
     def __init__(self, env: simpy.Environment, weights: dict):
         self.env = env
         self.weights = weights
-        self.priorities = sorted(weights.keys(), key=lambda p: p.value)
-        self.queues = {p: [] for p in self.priorities}
-        self.waiters = []  # Eventi per i pod in attesa
+
+        # La coda è una min-heap che ordina le richieste per il loro finish_tag.
+        # Formato tupla: (finish_tag, arrival_order, request_object)
+        self.queue = []
+        self.waiters = [] # Eventi per i pod in attesa
+
+        self.virtual_time = 0.0
+        self.arrival_counter = 0
 
     @property
     def items(self):
-        return [item for queue in self.queues.values() for item in queue]
+        """Restituisce una lista di tutti gli oggetti richiesta in coda."""
+        return [item_tuple[2] for item_tuple in self.queue]
 
-    def _get_total_items(self):
-        return sum(len(q) for q in self.queues.values())
+    def _update_virtual_time_on_get(self):
+        """Il tempo virtuale avanza al finish tag del prossimo item da servire."""
+        if self.queue:
+            next_finish_tag = self.queue[0][0]
+            self.virtual_time = max(self.virtual_time, next_finish_tag)
 
     def put(self, item):
-        self.queues[item.priority].append(item)
+        """Aggiunge una richiesta, calcola il suo Finish Tag e la inserisce in coda."""
+        # Se un pod sta aspettando, la coda era vuota. Il tempo virtuale
+        # deve essere aggiornato al tempo reale per evitare che rimanga indietro.
+        if self.waiters:
+            self.virtual_time = max(self.virtual_time, self.env.now)
+
+        weight = self.weights.get(item.priority, 1)
+        if weight <= 0:
+            finish_tag = float('inf')
+        else:
+            # Il Finish Tag è la somma del tempo di inizio virtuale e del costo normalizzato
+            start_tag = max(item.arrival_time, self.virtual_time)
+            finish_tag = start_tag + item.service_time / weight
+
+        heapq.heappush(self.queue, (finish_tag, self.arrival_counter, item))
+        self.arrival_counter += 1
+
         if self.waiters:
             self.waiters.pop(0).succeed()
 
     def get(self):
-        # Questo è un processo generatore che deve restituire un valore.
-        if self._get_total_items() == 0:
-            # Se non ci sono item, il pod deve aspettare.
-            # Creiamo un evento "promessa" e ci mettiamo in coda.
+        """Estrae la richiesta con il Finish Tag più basso."""
+        if not self.queue:
             wait_event = self.env.event()
             self.waiters.append(wait_event)
             yield wait_event
 
-        # Se siamo stati svegliati, ora c'è sicuramente un item.
-        non_empty_queues = {p: w for p, w in self.weights.items() if self.queues[p]}
+        # Estrai l'item con il finish_tag più basso
+        finish_tag, _, item = heapq.heappop(self.queue)
 
-        queues_with_items = list(non_empty_queues.keys())
-        weights_with_items = np.array([non_empty_queues[p] for p in queues_with_items], dtype=float)
+        # Aggiorna il tempo virtuale del sistema a quello dell'item appena servito
+        self.virtual_time = finish_tag
 
-        probabilities = weights_with_items / np.sum(weights_with_items)
-        prio_to_serve = np.random.choice(queues_with_items, p=probabilities)
-
-        # Estraiamo l'item e usiamo 'return' per passarlo come valore del processo.
-        item = self.queues[prio_to_serve].pop(0)
         return item
+
+    def update_weights(self, new_weights: dict):
+        """Permette di cambiare i pesi dello scheduler dinamicamente."""
+        print(f"{self.env.now:.2f} [WFQStore]: AGGIORNAMENTO PESI -> {{ {', '.join([f'{p.name}: {w}' for p,w in new_weights.items()])} }}")
+        self.weights = new_weights
