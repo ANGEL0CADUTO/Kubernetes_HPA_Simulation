@@ -1,6 +1,5 @@
 # In src/steady_state_analysis/steady_state_plotter.py
 import os
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -12,7 +11,7 @@ from src.config import RequestType
 plt.style.use('ggplot')
 
 class SteadyStatePlotter:
-    def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, config):
+    def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, config, use_log_scale_infinite=False):
         self.metrics = metrics
         self.metrics_prio = metrics_prio
         self.config = config
@@ -21,6 +20,7 @@ class SteadyStatePlotter:
             RequestType.CHECKOUT: '#32CD32', RequestType.LOGIN: '#FFD700',
             RequestType.NAVIGATION: '#9400D3'
         }
+        self.use_log_scale_infinite = use_log_scale_infinite
 
     # ==============================================================================
     # ORCHESTRATORE PRINCIPALE
@@ -142,7 +142,10 @@ class SteadyStatePlotter:
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
         category_names = [req.name.replace('_', ' ').title() for req in all_req_types]
 
+
         for metric_name, ax in zip(['response', 'wait'], axes):
+            if self.use_log_scale_infinite:
+                ax.set_yscale('log')
             plot_data = []
             for req_type in all_req_types:
                 if (ci_b := analyzer_baseline.calculate_batch_means_ci(self.metrics.response_times_history.get(req_type, []) if metric_name == 'response' else self.metrics.wait_times_history.get(req_type, []), warmup, batches)):
@@ -226,16 +229,38 @@ class SteadyStatePlotter:
         plt.tight_layout()
         self._save_plot(output_dir, filename, fig)
     def plot_steady_state_loss_ci(self, baseline_results, prio_results, output_dir):
-        self._plot_single_scenario_loss(baseline_results, 'Senza Priorità', '#ff0000', output_dir, "loss_probability_baseline.png")
-        self._plot_single_scenario_loss(prio_results, 'Con Priorità', '#0000ff', output_dir, "loss_probability_prio.png")
+        self._plot_single_scenario_loss(
+            baseline_results, 'Senza Priorità', '#ff0000', output_dir, "loss_probability_baseline.png"
+        )
+        self._plot_single_scenario_loss(
+            prio_results, 'Con Priorità', '#0000ff', output_dir, "loss_probability_prio.png"
+        )
+
         print("Generazione grafico di CONFRONTO per probabilità di perdita...")
         fig, ax = plt.subplots(figsize=(8, 6))
-        bars = ax.bar(['Senza Priorità', 'Con Priorità'], [baseline_results['mean'], prio_results['mean']], yerr=[baseline_results['half_width'], prio_results['half_width']], color=['#ff0000', '#0000ff'], capsize=10, alpha=0.8, width=0.5)
+
+        # Scala logaritmica solo per steady state
+        if self.use_log_scale_infinite:
+            ax.set_yscale('log')
+            ax.set_ylim(bottom=1e-6, top=max(baseline_results['mean'], prio_results['mean']) * 5)
+        else:
+            ax.set_ylim(bottom=0, top=ax.get_ylim()[1] * 1.2)
+
+        bars = ax.bar(
+            ['Senza Priorità', 'Con Priorità'],
+            [baseline_results['mean'], prio_results['mean']],
+            yerr=[baseline_results['half_width'], prio_results['half_width']],
+            color=['#ff0000', '#0000ff'], capsize=10, alpha=0.8, width=0.5
+        )
+
         ax.set_title('Confronto Probabilità di Perdita (Steady State) con IC al 95%', fontsize=16)
-        ax.set_ylabel('Probabilità di Perdita Stimata'); ax.set_ylim(bottom=0, top=ax.get_ylim()[1] * 1.2)
-        ax.grid(True, axis='y', linestyle='--', alpha=0.7); ax.bar_label(bars, fmt='%.4f', padding=3)
+        ax.set_ylabel('Probabilità di Perdita Stimata')
+        ax.grid(True, axis='y', linestyle='--', alpha=0.7)
+        ax.bar_label(bars, fmt='%.4f', padding=3)
+
         plt.tight_layout()
         self._save_plot(output_dir, "loss_probability_comparison.png", fig)
+
 
     def _plot_convergence_baseline_by_type(self, output_dir):
         fig, ax = plt.subplots(figsize=(12, 7))
