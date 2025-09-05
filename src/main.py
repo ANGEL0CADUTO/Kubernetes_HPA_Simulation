@@ -169,7 +169,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     print("\n--- Generazione Report Steady-State ---")
     #analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
     #analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
-    #steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
+    #steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config,use_log_scale=False) # Disabilitiamo la scala log per chiarezza
     #steady_plotter.generate_steady_state_report(
         #analyzer_baseline=analyzer_baseline, analyzer_prio=analyzer_prio,
         #warmup=config.WARM_UP_TO_STEADY, batches={ "baseline" : (mean_base,ci95_base,b_base),"priority": (mean_prio,ci95_prio,b_prio) },

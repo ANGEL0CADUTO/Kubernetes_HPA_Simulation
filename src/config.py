@@ -2,6 +2,8 @@ import math
 from enum import Enum
 from enum import IntEnum
 
+from src.steady_state_analysis.steady_state_analyzer import SimulationMode
+
 # ==============================================================================
 # CONFIGURAZIONI GENERALI DELLA SIMULAZIONE
 # ==============================================================================
@@ -14,8 +16,11 @@ WARM_UP_TO_STEADY = 2500        # Periodo di transitorio da scartare, determinat
 BATCH_K = 64        # numero di batch
 BATCH_THRESHOLD = 0.2  # soglia autocorrelazione
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = False           # Flag per attivare l'esecuzione della simulazione lunga
-
+STEADY_ENABLED = False   # Flag per attivare l'esecuzione della simulazione lunga
+REL_PRECISION=0.05
+WARMUP_METHOD = "MSER5"
+ABS_PRECISION = None
+SIMULATION_MODE = SimulationMode.STEADY_STATE
 # ==============================================================================
 # MODELLO DEL SISTEMA (Cluster Kubernetes)
 # ==============================================================================
