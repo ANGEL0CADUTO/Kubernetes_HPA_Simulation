@@ -1,9 +1,12 @@
 # File: main.py (VERSİONE CORRETTA E AGGIORNATA)
+import os
 
 from analysis.plotter import Plotter
 from src import config
 from src.simulation.simulator import Simulator
 from src.simulation.simulator_with_priority import SimulatorWithPriority
+from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
+from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
 # MODIFICATO: L'import ora carica la NUOVA classe che gestisce gli stream
 from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per chiarezza
 from src.utils.metrics import Metrics
@@ -113,69 +116,128 @@ def main():
     # return all_results, NUM_REPLICATIONS # <-- Questa riga è necessaria
 
 
+
+
 def run_steady_state_experiment(rng_manager: RNGManager):
     """
     Esegue la simulazione a orizzonte infinito per l'analisi di regime permanente.
-    (Questa funzione rimane invariata)
     """
     print("\n--- AVVIO ESPERIMENTO STEADY-STATE A ORIZZONTE INFINITO ---")
     output_dir = "plots/steady_state"
+    os.makedirs(output_dir, exist_ok=True)
+
     steady_lambda_fn = lambda t: 85
-    steady_streams = rng_manager.get_replication_streams()
+    # Genera un set di stream per questa singola run di steady-state
+    # CORREZIONE QUI: Scorpora la tupla in `steady_streams_dict` e `steady_rep_seed`
+    steady_streams_dict, steady_rep_seed = rng_manager.get_replication_streams()
+    print(f"--- La run Steady-State utilizzerà il SEED master: {steady_rep_seed} ---")
+
 
     print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
     metrics_baseline = Metrics(config_module=config)
     simulator_baseline = Simulator(
         config_module=config, metrics=metrics_baseline,
-        arrival_rng=steady_streams['arrivals'], choice_rng=steady_streams['choice'],
-        service_rng=steady_streams['service'], lambda_function=steady_lambda_fn
+        arrival_rng=steady_streams_dict['arrivals'],
+        choice_rng=steady_streams_dict['choice'],
+        service_rng=steady_streams_dict['service'],
+        lambda_function=steady_lambda_fn
     )
     simulator_baseline.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
     print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
     metrics_prio = MetricsWithPriority(config)
     simulator_prio = SimulatorWithPriority(
-        config_module=config, metrics=metrics_prio,
-        arrival_rng=steady_streams['arrivals'], choice_rng=steady_streams['choice'],
-        service_rng=steady_streams['service'], lambda_function=steady_lambda_fn
+        config= config,
+        metrics=metrics_prio,
+        arrival_rng=steady_streams_dict['arrivals'],
+        choice_rng=steady_streams_dict['choice'],
+        service_rng=steady_streams_dict['service'],
+        lambda_function=steady_lambda_fn
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-
     # --- CALCOLO BATCH MEANS ---
-    #POSSIAMO SCEGLIERE QUALI SAMPLE USARE SE get_all_response_time_with_timestamps o get_response_time_by_type(req_type)
     print("\n--- Calcolo Batch Means ---")
 
-    #RIMUOVO WARM UP
-    metrics_baseline.remove_warmup(config.WARM_UP_TO_STEADY)
+    # Istanzia gli analizzatori. Questi analizzatori lavoreranno sui dati COMPLETI
+    # (inclusi warm-up) presenti negli oggetti metrics.
+    analyzer_baseline_full_data = SteadyStateAnalyzer(metrics_baseline, config)
+    analyzer_prio_full_data = SteadyStateAnalyzer(metrics_prio, config)
 
-    samples_baseline = [v for _, v in metrics_baseline.get_all_response_times_with_timestamps()]
-    samples_prio = [v for _, v in metrics_prio.get_all_response_times_with_timestamps()]
+    # Estrai i campioni COMPLETI (inclusi warm-up) per la stima del warm-up.
+    initial_samples_baseline = analyzer_baseline_full_data.extract_response_times()
+    initial_samples_prio = analyzer_prio_full_data.extract_response_times()
 
-    # calcolo b ottimale per baseline
-    b_base, rho_base = compute_batch_size(
-        samples_baseline, k=config.BATCH_K, threshold=config.BATCH_THRESHOLD
+    # Stima la durata del warm-up per la baseline
+    # Il metodo estimate_warmup() di SteadyStateAnalyzer deve essere chiamato sull'istanza.
+    estimated_warmup_duration_baseline = analyzer_baseline_full_data.estimate_warmup(initial_samples_baseline)
+    estimated_warmup_duration_prio = analyzer_prio_full_data.estimate_warmup(initial_samples_prio)
+    print(f"Warm-up stimato per Baseline: {estimated_warmup_duration_baseline} periodi/s.")
+
+    # Esegui la rimozione del warm-up sui dati di metrics_baseline
+    # QUESTA È LA RIGA CRITICA CORRETTA
+    metrics_baseline.remove_warmup(estimated_warmup_duration_baseline)
+
+    # Esegui la rimozione del warm-up sui dati di metrics_prio.
+
+    metrics_prio.remove_warmup(estimated_warmup_duration_prio)
+
+    # Estrai i campioni DOPO LA RIMOZIONE DEL WARM-UP.
+
+    samples_baseline_post_warmup = [v for _, v in metrics_baseline.get_all_response_times_with_timestamps()]
+    samples_prio_post_warmup = [v for _, v in metrics_prio.get_all_response_times_with_timestamps()]
+
+    # Calcolo b, k_ottimale e rho1 per baseline usando i dati POST-WARMUP
+    b_base, k_base_optimal, rho_base = compute_batch_size(
+        samples_baseline_post_warmup, k_initial_target=config.BATCH_K, threshold=config.BATCH_THRESHOLD
     )
-    mean_base, ci95_base = batch_means(samples_baseline, b_base, config.BATCH_K)
-    print(f"Baseline: b={b_base}, rho1={rho_base:.3f}, media={mean_base}, IC95={ci95_base}")
 
-    # calcolo b ottimale per priorità
-    b_prio, rho_prio = compute_batch_size(
-        samples_prio, k=config.BATCH_K, threshold=config.BATCH_THRESHOLD
+    if b_base is None or k_base_optimal is None:
+        print("ATTENZIONE: Impossibile determinare dimensioni/numero batch per Baseline. Impostazione valori di fallback.")
+        mean_base, ci95_base, b_base, k_base_optimal = None, (None, None), None, None
+    else:
+        # Passa k_base_optimal a batch_means
+        batch_means_results_base = batch_means(samples_baseline_post_warmup, b_base, k_base_optimal)
+        mean_base = batch_means_results_base['mean']
+        ci95_base = batch_means_results_base['ci']
+    print(f"Baseline: b={b_base}, k={k_base_optimal}, rho1={rho_base:.3f}, media={mean_base}, IC95={ci95_base}")
+
+    # Calcolo b, k_ottimale e rho1 per priorità usando i dati POST-WARMUP
+    b_prio, k_prio_optimal, rho_prio = compute_batch_size(
+        samples_prio_post_warmup, k_initial_target=config.BATCH_K, threshold=config.BATCH_THRESHOLD
     )
-    mean_prio, ci95_prio = batch_means(samples_prio, b_prio, config.BATCH_K)
-    print(f"Priorità: b={b_prio}, rho1={rho_prio:.3f}, media={mean_prio}, IC95={ci95_prio}")
+    if b_prio is None or k_prio_optimal is None:
+        print("ATTENZIONE: Impossibile determinare dimensioni/numero batch per Priorità. Impostazione valori di fallback.")
+        mean_prio, ci95_prio, b_prio, k_prio_optimal = None, (None, None), None, None
+    else:
+        # Passa k_prio_optimal a batch_means
+        batch_means_results_prio = batch_means(samples_prio_post_warmup, b_prio, k_prio_optimal)
+        mean_prio = batch_means_results_prio['mean']
+        ci95_prio = batch_means_results_prio['ci']
+    print(f"Priorità: b={b_prio}, k={k_prio_optimal}, rho1={rho_prio:.3f}, media={mean_prio}, IC95={ci95_prio}")
 
     print("\n--- Generazione Report Steady-State ---")
-    #analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
-    #analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
-    #steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config,use_log_scale=False) # Disabilitiamo la scala log per chiarezza
-    #steady_plotter.generate_steady_state_report(
-        #analyzer_baseline=analyzer_baseline, analyzer_prio=analyzer_prio,
-        #warmup=config.WARM_UP_TO_STEADY, batches={ "baseline" : (mean_base,ci95_base,b_base),"priority": (mean_prio,ci95_prio,b_prio) },
-        #output_dir=output_dir
-    #)
+    # Per i plotter e gli analyzer che useranno i dati, dobbiamo passare le istanze metrics_baseline
+
+    analyzer_baseline_post_warmup = SteadyStateAnalyzer(metrics_baseline, config)
+    analyzer_prio_post_warmup = SteadyStateAnalyzer(metrics_prio, config)
+    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
+
+    # `estimated_warmup_duration_baseline` è il tempo assoluto in cui lo steady-state è iniziato.
+    # Viene passato al plotter per le etichette sui grafici.
+    steady_plotter.generate_steady_state_report(
+        analyzer_baseline=analyzer_baseline_post_warmup,
+        analyzer_prio=analyzer_prio_post_warmup,
+        warmup_duration_s=estimated_warmup_duration_baseline,
+        overall_batch_ci_results={
+            "baseline" : (mean_base, ci95_base, b_base, k_base_optimal),
+            "priority": (mean_prio, ci95_prio, b_prio, k_prio_optimal)
+        },
+        output_dir=output_dir
+    )
     print("\n--- Fine dell'analisi Steady-State ---")
+
+
 
 
 def print_final_debug_summary(all_results: dict):
@@ -202,7 +264,8 @@ def print_final_debug_summary(all_results: dict):
             # --- FIX: Convertiamo esplicitamente la media in float ---
             # Aggiungiamo anche un controllo nel caso in cui non ci siano state richieste servite
             if metrics_base.global_response_times_welford.mean is not None:
-                avg_resp_time_b = float(metrics_base.global_response_times_welford.item())
+
+                avg_resp_time_b = metrics_base.global_response_times_welford.mean
             else:
                 avg_resp_time_b = 0.0
 
@@ -215,7 +278,7 @@ def print_final_debug_summary(all_results: dict):
 
             # --- FIX: Convertiamo esplicitamente la media in float ---
             if metrics_prio.global_welford_response.mean is not None:
-                avg_resp_time_p = float(metrics_prio.global_welford_response.item())
+                avg_resp_time_p =metrics_prio.global_welford_response.mean
             else:
                 avg_resp_time_p = 0.0
 
@@ -248,8 +311,9 @@ if __name__ == "__main__":
     # 3. Esegui l'analisi steady-state se è abilitata nel config
     #    (Questa parte è separata e non è stata toccata)
     if config.STEADY_ENABLED:
-        # Dovremmo ridefinire qui le funzioni o importarle correttamente
-        # Per ora, si assume che non sia l'obiettivo principale
-        print("\n--- Esecuzione Steady-State non implementata in questo script pulito ---")
+        rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
+        run_steady_state_experiment(rng_manager_for_steady_state)
+    else:
+        print("\n--- Analisi Steady-State disabilitata in config.py ---")
 
     print("\n--- Processo di Simulazione e Analisi Completato ---")
