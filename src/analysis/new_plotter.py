@@ -56,9 +56,10 @@ class newPlotter:
 
 
     # --- Funzione Principale ---
-    # Questa è un'operazione che aggrega risultati da più simulazioni,
-    # quindi ha senso che sia un metodo statico, dato che non usa 'self'.
-    # Riceve tutti i dati di cui ha bisogno come argomento.
+    # Traccia il trend del tempo medio di risposta per i vari seed
+    # mette a confronto baseline e migliorato
+    # usa la funzione ausiliaria per stampare il singolo replication traces
+    # Analisi del transitorio: mostra lo stabilizzarsi del comportamento del sistema confrontando le repliche
     @staticmethod
     def plot_replication_traces_per_scenario(
             all_results: Dict[str, Dict[int, Dict[str, Any]]],
@@ -119,3 +120,9 @@ class newPlotter:
             fig.savefig(output_path, dpi=300, bbox_inches='tight')
             plt.close(fig)
             print(f"Grafico per '{scenario_name}' salvato in: {output_path}")
+
+    # --- Funzione Principale ---
+    # Grafico: stampa il trend del tempo medio con intervallo di confidenza
+    # Analisi dello stazionario? studia la convergenza della media
+    
+
