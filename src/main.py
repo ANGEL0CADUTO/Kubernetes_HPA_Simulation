@@ -3,15 +3,16 @@ import os
 
 from analysis.plotter import Plotter
 from src import config
+from src.analysis.plotter_transient import plot_transient_comparison
 from src.simulation.simulator import Simulator
+from src.simulation.simulator_wfq import SimulatorWFQ
 from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
 from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
-# MODIFICATO: L'import ora carica la NUOVA classe che gestisce gli stream
 from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per chiarezza
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from utils.acs import batch_means, compute_batch_size
+from src.utils.acs import batch_means, compute_batch_size
 
 
 def main():
@@ -25,7 +26,7 @@ def main():
     arrival_scenarios = {
         "tasso_70": lambda t: 85,
         "tasso_85": lambda t: 170,
-       #"tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
+        #"tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
     }
 
     rng_manager = RNGManager(master_seed=config.LEHMER_SEED)
@@ -60,18 +61,25 @@ def main():
 
             # --- ESECUZIONE MIGLIORATA ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
-            metrics_prio = MetricsWithPriority(config_module=config)
+            metrics_prio= MetricsWithPriority(config)
             simulator_prio = SimulatorWithPriority(config=config,
-                metrics=metrics_prio,
-                arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
-                service_rng=replication_streams['service'], lambda_function=lambda_fn)
+                                               metrics=metrics_prio,
+                                               arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+                                               service_rng=replication_streams['service'], lambda_function=lambda_fn)
             simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
-
+            print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (WFQ) ---")
+            metrics_wfq=MetricsWithPriority(config)
+            simulator_wfq=SimulatorWFQ(config=config,
+                                        metrics=metrics_wfq,
+                                        arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+                                        service_rng=replication_streams['service'], lambda_function=lambda_fn)
+            simulator_wfq.run(simulation_duration=config.SIMULATION_TIME)
 
 
             all_results[scenario_name][i] = {
                 'baseline': metrics_base,
                 'priority': metrics_prio,
+                'wfq': metrics_wfq,
                 'seed': rep_seed # Il seed salvato sarà lo stesso per tutti gli scenari di questa replica
             }
             # --- Generazione report dettagliati per QUESTA specifica replica ---
@@ -84,38 +92,19 @@ def main():
                 run_prefix=f"{scenario_name}_repl{i+1}"
             )
 
+            #>>> Aggiunta della chiamata per il grafico delle tante run
+            plot_transient_comparison(
+                metrics_base, metrics_prio,metrics_wfq,
+                scenario_name=scenario_name,
+                replica_idx=i,
+                output_dir=output_folder
+            )
+
+
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE E SCENARI {'='*30}")
 
     # La funzione main ora restituisce semplicemente i dati raccolti
     return all_results, NUM_REPLICATIONS
-
-
-
-    # # --- ANALISI FINALE DEI RISULTATI ---
-    # # La generazione dei report per singola replica è utile per il debug, ma possiamo commentarla
-    # # per concentrarci sui risultati aggregati.
-    # # print("\n--- Generazione report di esempio (basati sull'ultima replica) ---")
-    # # last_replica_index = NUM_REPLICATIONS - 1
-    # # for scenario_name in arrival_scenarios:
-    # #     output_folder = f"output/plots_{scenario_name}"
-    # #     os.makedirs(output_folder, exist_ok=True)
-    # #     last_run_metrics = all_results[scenario_name][last_replica_index]
-    # #     plotter = Plotter(last_run_metrics['baseline'], last_run_metrics['priority'], config)
-    # #     plotter.generate_comprehensive_report(output_dir=output_folder, run_prefix=f"{scenario_name}_repl{last_replica_index+1}")
-    #
-    #
-    #
-    #
-    # # --- STEADY-STATE (se abilitato) ---
-    # if config.STEADY_ENABLED:
-    #     print("\n--- Inizio Simulazione Steady-State ---")
-    #     run_steady_state_experiment(rng_manager)
-    #     print("--- Fine Simulazione Steady-State ---")
-    #
-    # print("\n--- Processo di Simulazione e Analisi Completato ---")
-    # return all_results, NUM_REPLICATIONS # <-- Questa riga è necessaria
-
-
 
 
 def run_steady_state_experiment(rng_manager: RNGManager):
@@ -127,8 +116,6 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     os.makedirs(output_dir, exist_ok=True)
 
     steady_lambda_fn = lambda t: 85
-    # Genera un set di stream per questa singola run di steady-state
-    # CORREZIONE QUI: Scorpora la tupla in `steady_streams_dict` e `steady_rep_seed`
     steady_streams_dict, steady_rep_seed = rng_manager.get_replication_streams()
     print(f"--- La run Steady-State utilizzerà il SEED master: {steady_rep_seed} ---")
 
@@ -155,89 +142,108 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         lambda_function=steady_lambda_fn
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    metrics_wfq=MetricsWithPriority(config)
+    simulator_wfq=SimulatorWFQ(
+        config=config,
+        metrics=metrics_wfq,
+        arrival_rng=steady_streams_dict['arrivals'],
+        choice_rng=steady_streams_dict['choice'],
+        service_rng=steady_streams_dict['service'],
+        lambda_function=steady_lambda_fn
+    )
+    simulator_wfq.run(simulation_duration=config.STEADY_SIMULATION_TIME)
 
-    # --- CALCOLO BATCH MEANS ---
-    print("\n--- Calcolo Batch Means ---")
+    # --- CALCOLO WARM-UP E BATCH MEANS ---
+    print("\n--- Calcolo Warm-up e Batch Means per i Tempi di Risposta Complessivi ---")
 
-    # Istanzia gli analizzatori. Questi analizzatori lavoreranno sui dati COMPLETI
-    # (inclusi warm-up) presenti negli oggetti metrics.
+    # Istanzia gli analizzatori con i dati completi (inclusi warm-up)
     analyzer_baseline_full_data = SteadyStateAnalyzer(metrics_baseline, config)
     analyzer_prio_full_data = SteadyStateAnalyzer(metrics_prio, config)
+    analyzer_wfq_full_data = SteadyStateAnalyzer(metrics_wfq, config)
 
-    # Estrai i campioni COMPLETI (inclusi warm-up) per la stima del warm-up.
-    initial_samples_baseline = analyzer_baseline_full_data.extract_response_times()
-    initial_samples_prio = analyzer_prio_full_data.extract_response_times()
+    # Estrai i campioni COMPLETI per la stima del warm-up.
+    all_response_times_baseline = analyzer_baseline_full_data.extract_response_times()
+    all_response_times_prio = analyzer_prio_full_data.extract_response_times()
+    all_response_times_wfq = analyzer_wfq_full_data.extract_response_times()
 
-    # Stima la durata del warm-up per la baseline
-    # Il metodo estimate_warmup() di SteadyStateAnalyzer deve essere chiamato sull'istanza.
-    estimated_warmup_duration_baseline = analyzer_baseline_full_data.estimate_warmup(initial_samples_baseline)
-    estimated_warmup_duration_prio = analyzer_prio_full_data.estimate_warmup(initial_samples_prio)
+    # Stima la durata del warm-up per entrambi gli scenari
+    estimated_warmup_duration_baseline = analyzer_baseline_full_data.estimate_warmup(all_response_times_baseline)
+    estimated_warmup_duration_prio = analyzer_prio_full_data.estimate_warmup(all_response_times_prio)
+    estimated_warmup_duration_wfq = analyzer_wfq_full_data.estimate_warmup(all_response_times_wfq)
     print(f"Warm-up stimato per Baseline: {estimated_warmup_duration_baseline} periodi/s.")
+    print(f"Warm-up stimato per Priorità: {estimated_warmup_duration_prio} periodi/s.")
+    print(f"Warm-up stimato per WFQ: {estimated_warmup_duration_wfq} periodi/s.")
 
-    # Esegui la rimozione del warm-up sui dati di metrics_baseline
-    # QUESTA È LA RIGA CRITICA CORRETTA
-    metrics_baseline.remove_warmup(estimated_warmup_duration_baseline)
 
-    # Esegui la rimozione del warm-up sui dati di metrics_prio.
-
-    metrics_prio.remove_warmup(estimated_warmup_duration_prio)
-
-    # Estrai i campioni DOPO LA RIMOZIONE DEL WARM-UP.
-
-    samples_baseline_post_warmup = [v for _, v in metrics_baseline.get_all_response_times_with_timestamps()]
-    samples_prio_post_warmup = [v for _, v in metrics_prio.get_all_response_times_with_timestamps()]
+    # Estrai i campioni DOPO aver rimosso il warm-up.
+    # CRITICAL CHANGE: Instead of `metrics.remove_warmup` (which modifies the metrics object),
+    # we filter the data for batch means calculation. `metrics` objects should remain untouched.
+    samples_baseline_post_warmup = [v for t, v in metrics_baseline.get_all_response_times_with_timestamps() if t >= estimated_warmup_duration_baseline]
+    samples_prio_post_warmup = [v for t, v in metrics_prio.get_all_response_times_with_timestamps() if t >= estimated_warmup_duration_prio]
+    samples_wfq_post_warmup = [v for t, v in metrics_wfq.get_all_response_times_with_timestamps() if t >= estimated_warmup_duration_wfq]
 
     # Calcolo b, k_ottimale e rho1 per baseline usando i dati POST-WARMUP
     b_base, k_base_optimal, rho_base = compute_batch_size(
         samples_baseline_post_warmup, k_initial_target=config.BATCH_K, threshold=config.BATCH_THRESHOLD
     )
 
-    if b_base is None or k_base_optimal is None:
+    mean_base, ci95_base, half_width_base = None, (None, None), None
+    if b_base is None or k_base_optimal is None or b_base * k_base_optimal == 0: # Ensure k is also not zero
         print("ATTENZIONE: Impossibile determinare dimensioni/numero batch per Baseline. Impostazione valori di fallback.")
-        mean_base, ci95_base, b_base, k_base_optimal = None, (None, None), None, None
     else:
-        # Passa k_base_optimal a batch_means
-        batch_means_results_base = batch_means(samples_baseline_post_warmup, b_base, k_base_optimal)
+        batch_means_results_base = batch_means(samples_baseline_post_warmup, b_base, k_base_optimal, confidence=config.CONFIDENCE_LEVEL)
         mean_base = batch_means_results_base['mean']
         ci95_base = batch_means_results_base['ci']
-    print(f"Baseline: b={b_base}, k={k_base_optimal}, rho1={rho_base:.3f}, media={mean_base}, IC95={ci95_base}")
+        half_width_base = batch_means_results_base['half_width']
+    print(f"Baseline (Overall Response Time): b={b_base}, k={k_base_optimal}, rho1={rho_base:.3f}, media={mean_base:.4f}, IC95={ci95_base}")
+
 
     # Calcolo b, k_ottimale e rho1 per priorità usando i dati POST-WARMUP
     b_prio, k_prio_optimal, rho_prio = compute_batch_size(
         samples_prio_post_warmup, k_initial_target=config.BATCH_K, threshold=config.BATCH_THRESHOLD
     )
-    if b_prio is None or k_prio_optimal is None:
+
+    mean_prio, ci95_prio, half_width_prio = None, (None, None), None
+    if b_prio is None or k_prio_optimal is None or b_prio * k_prio_optimal == 0:
         print("ATTENZIONE: Impossibile determinare dimensioni/numero batch per Priorità. Impostazione valori di fallback.")
-        mean_prio, ci95_prio, b_prio, k_prio_optimal = None, (None, None), None, None
     else:
-        # Passa k_prio_optimal a batch_means
-        batch_means_results_prio = batch_means(samples_prio_post_warmup, b_prio, k_prio_optimal)
+        batch_means_results_prio = batch_means(samples_prio_post_warmup, b_prio, k_prio_optimal, confidence=config.CONFIDENCE_LEVEL)
         mean_prio = batch_means_results_prio['mean']
         ci95_prio = batch_means_results_prio['ci']
-    print(f"Priorità: b={b_prio}, k={k_prio_optimal}, rho1={rho_prio:.3f}, media={mean_prio}, IC95={ci95_prio}")
+        half_width_prio = batch_means_results_prio['half_width']
+    print(f"Priorità (Overall Response Time): b={b_prio}, k={k_prio_optimal}, rho1={rho_prio:.3f}, media={mean_prio:.4f}, IC95={ci95_prio}")
+
+    mean_wfq, ci95_wfq, half_width_wfq = None, (None, None), None
+    if b_prio is None or k_prio_optimal is None or b_prio * k_prio_optimal == 0:
+        print("ATTENZIONE: Impossibile determinare dimensioni/numero batch per WFQ. Impostazione valori di fallback.")
+    else:
+        batch_means_results_wfq = batch_means(samples_wfq_post_warmup, b_prio, k_prio_optimal, confidence=config.CONFIDENCE_LEVEL)
+        mean_wfq = batch_means_results_wfq['mean']
+        ci95_wfq = batch_means_results_wfq['ci']
+        half_width_wfq = batch_means_results_wfq['half_width']
+    print(f"WFQ (Overall Response Time): b={b_prio}, k={k_prio_optimal}, rho1={rho_prio:.3f}, media={mean_wfq:.4f}, IC95={ci95_wfq}")
 
     print("\n--- Generazione Report Steady-State ---")
-    # Per i plotter e gli analyzer che useranno i dati, dobbiamo passare le istanze metrics_baseline
+    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio,metrics_wfq, config)
 
-    analyzer_baseline_post_warmup = SteadyStateAnalyzer(metrics_baseline, config)
-    analyzer_prio_post_warmup = SteadyStateAnalyzer(metrics_prio, config)
-    steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, config)
 
-    # `estimated_warmup_duration_baseline` è il tempo assoluto in cui lo steady-state è iniziato.
-    # Viene passato al plotter per le etichette sui grafici.
     steady_plotter.generate_steady_state_report(
-        analyzer_baseline=analyzer_baseline_post_warmup,
-        analyzer_prio=analyzer_prio_post_warmup,
-        warmup_duration_s=estimated_warmup_duration_baseline,
-        overall_batch_ci_results={
-            "baseline" : (mean_base, ci95_base, b_base, k_base_optimal),
-            "priority": (mean_prio, ci95_prio, b_prio, k_prio_optimal)
+        analyzer_baseline=analyzer_baseline_full_data, # Use the analyzers initialized with full data
+        analyzer_prio=analyzer_prio_full_data,  # So they can apply warmup internally
+        analyzer_wfq=analyzer_wfq_full_data,
+        warmup={
+            "baseline" : estimated_warmup_duration_baseline,
+            "priority" : estimated_warmup_duration_prio,
+            "wfq": estimated_warmup_duration_wfq
+        },
+        batches={ # These batches refer to the overall response time batch means calculation
+            "baseline" : (mean_base, ci95_base, b_base, k_base_optimal), # Added half_width_base if needed
+            "priority": (mean_prio, ci95_prio, b_prio, k_prio_optimal) # Added half_width_prio if needed
+            ,"wfq": (mean_wfq, ci95_wfq, b_prio, k_prio_optimal)
         },
         output_dir=output_dir
     )
     print("\n--- Fine dell'analisi Steady-State ---")
-
-
 
 
 def print_final_debug_summary(all_results: dict):

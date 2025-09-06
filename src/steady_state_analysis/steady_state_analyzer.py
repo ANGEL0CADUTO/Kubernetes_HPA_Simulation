@@ -161,12 +161,21 @@ class SteadyStateAnalyzer:
 
 
 
-    #Modifice minime
 
-    def calculate_throughput_ci(self, completion_timestamps, warmup_period, confidence_level=0.95, threshold=0.2):
+
+    def calculate_throughput_ci(self,completion_timestamps,warmup_period,confidence_level=0.95,threshold=0.2):
         """
         Calcola il throughput medio (eventi/sec) e il suo intervallo di confidenza
         utilizzando il metodo Batch Means su una serie di timestamp di eventi.
+
+        Args:
+            completion_timestamps (list[float]): timestamp degli eventi completati
+            warmup_period (float): tempo di warm-up da escludere
+            confidence_level (float): livello di confidenza per IC
+            threshold (float): soglia per calcolo batch size
+
+        Returns:
+            dict | None: dizionario con mean, ci, half_width, total_count, ecc.
         """
         # 1. Filtra i dati per rimuovere il transitorio
         steady_state_timestamps = [t for t in completion_timestamps if t >= warmup_period]
@@ -175,20 +184,40 @@ class SteadyStateAnalyzer:
             print("Warning: Nessun dato in steady-state per calcolare il throughput.")
             return None
 
-        # Calcola throughput come inverse inter-arrival times
+        # 2. Calcola throughput come inverse inter-arrival times
         interarrivals = np.diff(steady_state_timestamps)
-        throughputs = 1.0 / interarrivals
-
-        # Applica batch means analysis
-        b, k = compute_batch_size(throughputs, threshold=threshold)
-        if b is None or k is None:
+        if len(interarrivals) == 0:
+            print("Warning: Non ci sono inter-arrival per calcolare il throughput.")
             return None
 
+        throughputs = 1.0 / interarrivals
+
+        # 3. Determina il batch size usando compute_batch_size
+        batch_result = compute_batch_size(throughputs, threshold=threshold)
+        if not batch_result or len(batch_result) < 2:
+            print("Warning: compute_batch_size non ha restituito b e k validi.")
+            return None
+
+        b, k = int(batch_result[0]), int(batch_result[1])
+        if b <= 0 or k <= 0:
+            print("Warning: batch_size o num_batches <= 0, impossibile calcolare batch means.")
+            return None
+
+        # 4. Calcola batch means
         results = batch_means(throughputs, b, k, confidence=confidence_level)
-        batches = [np.mean(throughputs[i*b:(i+1)*b]) for i in range(k)]
-        pval = ljung_box_test(batches, h=min(10, k-1))
+
+        # 5. Test di indipendenza (Ljung-Box)
+        batch_values = [np.mean(throughputs[i*b:(i+1)*b]) for i in range(k)]
+        pval = ljung_box_test(batch_values, h=min(10, k-1))
         results["ljung_box_pvalue"] = pval
         results["independence_ok"] = (pval is None) or (pval > 0.05)
         results["total_count"] = len(steady_state_timestamps)
+
         return results
+
+
+
+
+
+
 
