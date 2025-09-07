@@ -1,5 +1,3 @@
-# File: src/simulation/simulator_wfq.py
-
 from collections import defaultdict
 import simpy
 from src.controller.hpa import HPA
@@ -7,34 +5,36 @@ from src.model.request import PriorityRequest
 from src.service.service import PodService
 from src.service.traffic_profiler import DynamicTrafficProfiler
 from src.utils.wfq_store import WFQStore
+from src.model.worker_node import WorkerNode
 
 class SimulatorWFQ:
     class _Pod:
         def __init__(self, pod_id, process): self.id = pod_id; self.process = process
 
-    def __init__(self, config, metrics, arrival_rng, choice_rng, service_rng, lambda_function, timeouts_enabled=True):
+    def __init__(self, config, metrics_class, arrival_rng, choice_rng, service_rng, lambda_function, timeouts_enabled=True):
         self.config = config
-        self.metrics = metrics
         self.env = simpy.Environment()
         self.arrival_rng = arrival_rng
         self.choice_rng = choice_rng
         self.service_rng = service_rng
         self.lambda_function = lambda_function
         self.service = PodService(service_rng, config)
-        self.traffic_profiler = DynamicTrafficProfiler(metrics, config)
         self.timeouts_enabled = timeouts_enabled
 
-        # Pesi di partenza, verranno cambiati dinamicamente dal metrics_recorder
-        self.NORMAL_WEIGHTS = {
-            self.config.Priority.HIGH: 94,
-            self.config.Priority.MEDIUM: 5,
-            self.config.Priority.LOW: 1
-        }
-        self.request_queue = WFQStore(self.env, weights=self.NORMAL_WEIGHTS)
+        self.metrics_per_worker = [metrics_class(config) for _ in range(config.NUM_WORKERS)]
+        self.metrics_agg = metrics_class(config)
 
+        self.traffic_profiler = DynamicTrafficProfiler(self.metrics_agg, config)
+
+        self.NORMAL_WEIGHTS = {self.config.Priority.HIGH: 94, self.config.Priority.MEDIUM: 5, self.config.Priority.LOW: 1}
+
+        self.worker_nodes = []
+        for i in range(self.config.NUM_WORKERS):
+            wfq_queue = WFQStore(self.env, weights=self.NORMAL_WEIGHTS.copy())
+            self.worker_nodes.append(WorkerNode(env=self.env, node_id=i, queue_instance=wfq_queue))
+
+        self.next_worker_idx = 0
         self.shedding_enabled = False
-
-        self.active_pods = []; self.next_pod_id = 0; self.available_pod_ids = set()
 
     def request_generator(self):
         req_id_counter = 0
@@ -43,149 +43,137 @@ class SimulatorWFQ:
             if current_arrival_rate <= 0: yield self.env.timeout(1); continue
             time_to_next = self.arrival_rng.exponential(1.0 / current_arrival_rate)
             yield self.env.timeout(time_to_next)
+
             req_types, req_probs = self.traffic_profiler.get_current_probabilities()
             chosen_type = self.choice_rng.choice(req_types, p=req_probs)
-
             prio = self.config.REQUEST_TYPE_TO_PRIORITY[chosen_type]
 
-            # --- LOGICA DI LOAD SHEDDING AGGIORNATA ---
             if self.shedding_enabled and prio > self.config.Priority.MEDIUM:
-
-                # Creiamo un oggetto richiesta "fittizio" solo per registrarne il fallimento
-                # Non ha bisogno di service_time o timeout reali
                 req_id_counter += 1
-                rejected_request = PriorityRequest(
-                    request_id=req_id_counter, req_type=chosen_type,
-                    arrival_time=self.env.now, timeout=0,
-                    service_time=0, priority=prio
-                )
-                # La registriamo come fallita
-                self.metrics.record_request_failure(rejected_request, self.env.now)
-
-                continue # Saltiamo al prossimo ciclo
-            # --- FINE LOGICA AGGIORNATA ---
-
+                rejected_request = PriorityRequest(request_id=req_id_counter, req_type=chosen_type, arrival_time=self.env.now, timeout=0, service_time=0, priority=prio)
+                self.metrics_agg.record_request_failure(rejected_request, self.env.now)
+                continue
 
             service_time = self.service.get_service_time(chosen_type)
             timeout = self.config.REQUEST_TIMEOUTS[chosen_type]
             req_id_counter += 1
-            new_request = PriorityRequest(
-                request_id=req_id_counter, req_type=chosen_type,
-                arrival_time=self.env.now, timeout=timeout,
-                service_time=service_time, priority=prio
-            )
-            self.metrics.record_request_generation(self.env.now, prio, chosen_type)
-            if self.timeouts_enabled: self.env.process(self.timeout_watcher(new_request))
-            self.request_queue.put(new_request)
+            new_request = PriorityRequest(request_id=req_id_counter, req_type=chosen_type, arrival_time=self.env.now, timeout=timeout, service_time=service_time, priority=prio)
 
-    def pod_worker(self, pod_id):
+            self.metrics_agg.record_request_generation(self.env.now, prio, chosen_type)
+            if self.timeouts_enabled: self.env.process(self.timeout_watcher(new_request))
+
+            target_worker = self.worker_nodes[self.next_worker_idx]
+            target_worker.queue.put(new_request)
+            self.next_worker_idx = (self.next_worker_idx + 1) % self.config.NUM_WORKERS
+
+    def pod_worker(self, pod_id, worker: WorkerNode):
+        worker_metrics = self.metrics_per_worker[worker.id]
         while True:
             try:
-                # Pattern corretto per ottenere il valore da un processo SimPy
-                get_process = self.env.process(self.request_queue.get())
+                get_process = self.env.process(worker.queue.get())
                 request = yield get_process
-
+                if request.timed_out:
+                    continue
                 request.is_serviced = True
-                if request.timed_out: continue
+
                 wait_time = self.env.now - request.arrival_time
                 yield self.env.timeout(request.service_time)
                 completion_time = self.env.now
                 response_time = completion_time - request.arrival_time
-                self.metrics.record_request_metrics(completion_time, request, response_time, wait_time)
+
+                worker_metrics.record_request_metrics(completion_time, request, response_time, wait_time)
+                self.metrics_agg.record_request_metrics(completion_time, request, response_time, wait_time)
             except simpy.Interrupt: break
 
     def metrics_recorder(self):
         ALERT_THRESHOLD = 100
         SHEDDING_TIME_THRESHOLD = 300
-        CRISIS_WEIGHTS = {
-            self.config.Priority.HIGH: 98,
-            self.config.Priority.MEDIUM: 2,
-            self.config.Priority.LOW: 0
-        }
+        CRISIS_WEIGHTS = {self.config.Priority.HIGH: 98, self.config.Priority.MEDIUM: 2, self.config.Priority.LOW: 0}
         in_crisis_mode = False
         time_crisis_started = -1
-        DEBUG_INTERVAL = 50.0; last_debug_time = 0.0
-        served_since_last_debug = defaultdict(int)
 
         while True:
             yield self.env.timeout(1)
-            total_queue_len = len(self.request_queue.items)
 
-            # --- LOGICA DI CONTROLLO A DUE STADI ---
+            total_queue_len = sum(len(w.queue.items) for w in self.worker_nodes)
+
             if total_queue_len > ALERT_THRESHOLD and not in_crisis_mode:
-                # 1. ENTRA IN MODALITA' CRISI
                 in_crisis_mode = True
-                self.request_queue.update_weights(CRISIS_WEIGHTS)
-                time_crisis_started = self.env.now # Avvia il timer
+                print(f"{self.env.now:.2f} [CRISIS]: Coda aggregata > {ALERT_THRESHOLD}. Attivazione modalità crisi.")
+                time_crisis_started = self.env.now
+
+                for worker in self.worker_nodes:
+                    # 1. Applica i pesi di crisi per le nuove richieste
+                    worker.queue.update_weights(CRISIS_WEIGHTS)
+
+                    # 2. MODIFICA: Attiva il load shedding retroattivo per la classe LOW.
+                    # Purga immediatamente tutte le richieste LOW esistenti dalla coda del worker.
+                    purged_requests = worker.queue.purge_by_priority(self.config.Priority.LOW)
+
+                    if purged_requests:
+                        print(f"{self.env.now:.2f} [SHEDDING]: Rimosse {len(purged_requests)} richieste LOW dal Worker {worker.id}.")
+                        # 3. Registra ogni richiesta rimossa come fallita.
+                        for req in purged_requests:
+                            self.metrics_agg.record_request_failure(req, self.env.now)
+                            self.metrics_per_worker[worker.id].record_request_failure(req, self.env.now)
 
             elif total_queue_len <= ALERT_THRESHOLD and in_crisis_mode:
-                # 2. RITORNA ALLA NORMALITA'
                 in_crisis_mode = False
-                self.request_queue.update_weights(self.NORMAL_WEIGHTS)
+                print(f"{self.env.now:.2f} [CRISIS]: Coda aggregata <= {ALERT_THRESHOLD}. Ritorno alla normalità.")
+                for worker in self.worker_nodes:
+                    worker.queue.update_weights(self.NORMAL_WEIGHTS)
                 time_crisis_started = -1
-                self.shedding_enabled = False # Disattiva il load shedding
+                self.shedding_enabled = False
 
-            # 3. ATTIVA IL LOAD SHEDDING DI EMERGENZA
-            if in_crisis_mode and not self.shedding_enabled:
-                if (self.env.now - time_crisis_started) > SHEDDING_TIME_THRESHOLD:
-                    print(f"{self.env.now:.2f} [CRISIS]: Crisi prolungata per >{SHEDDING_TIME_THRESHOLD}s. ATTIVO LOAD SHEDDING.")
-                    self.shedding_enabled = True
-            # --- FINE LOGICA DI CONTROLLO ---
+            if in_crisis_mode and not self.shedding_enabled and (self.env.now - time_crisis_started) > SHEDDING_TIME_THRESHOLD:
+                print(f"{self.env.now:.2f} [CRISIS]: Crisi prolungata. Attivazione shedding per NUOVI arrivi.")
+                self.shedding_enabled = True
 
-            pod_count = len(self.active_pods)
-            queue_lengths_per_prio = defaultdict(int)
-            for item in self.request_queue.items:
-                queue_lengths_per_prio[item.priority] += 1
-            self.metrics.record_system_metrics(self.env.now, pod_count, total_queue_len, queue_lengths_per_prio)
+            total_pod_count = sum(len(w.active_pods) for w in self.worker_nodes)
+            queue_lengths_per_prio_agg = defaultdict(int)
 
-            if self.env.now >= last_debug_time + DEBUG_INTERVAL:
-                print("\n" + "="*80)
-                print(f"DEBUG REPORT (DWFQ) @ Time: {self.env.now:.2f}s")
-                print(f"  - In Modalità Crisi: {in_crisis_mode}")
-                print(f"  - Pesi Attuali: {{ {', '.join([f'{p.name}: {w}' for p,w in self.request_queue.weights.items()])} }}")
-                print(f"  - Pod Attivi: {pod_count}, Coda Totale: {total_queue_len}")
-                print(f"  - Coda Dettaglio: (HIGH: {queue_lengths_per_prio[self.config.Priority.HIGH]}, MEDIUM: {queue_lengths_per_prio[self.config.Priority.MEDIUM]}, LOW: {queue_lengths_per_prio[self.config.Priority.LOW]})")
-                stats = self.metrics.get_welford_statistics()
-                current_served_count = defaultdict(int)
-                for prio in self.config.Priority:
-                    for req_type, p_enum in self.config.REQUEST_TYPE_TO_PRIORITY.items():
-                        if p_enum == prio and req_type in stats['by_req_type']:
-                            current_served_count[prio] += stats['by_req_type'][req_type]['count']
-                print("  - Servite (ultimi 50s):")
-                for prio in self.config.Priority:
-                    served_in_interval = current_served_count[prio] - served_since_last_debug[prio]
-                    print(f"    - {prio.name}: {served_in_interval}")
-                    served_since_last_debug[prio] = current_served_count[prio]
-                print("="*80)
-                last_debug_time = self.env.now
+            for worker in self.worker_nodes:
+                worker_metrics = self.metrics_per_worker[worker.id]
+                queue_lengths_per_prio_worker = defaultdict(int)
 
-    def scale_to(self, desired_replicas):
-        current_replicas = len(self.active_pods)
+                for request_item in worker.queue.items:
+                    queue_lengths_per_prio_worker[request_item.priority] += 1
+
+                for prio, length in queue_lengths_per_prio_worker.items():
+                    queue_lengths_per_prio_agg[prio] += length
+
+                worker_metrics.record_system_metrics(self.env.now, len(worker.active_pods), len(worker.queue.items), queue_lengths_per_prio_worker)
+
+            self.metrics_agg.record_system_metrics(self.env.now, total_pod_count, total_queue_len, queue_lengths_per_prio_agg)
+
+
+    def scale_worker(self, worker: WorkerNode, desired_replicas: int):
+        current_replicas = len(worker.active_pods)
         if desired_replicas > current_replicas:
             for _ in range(desired_replicas - current_replicas):
-                pod_id = self.available_pod_ids.pop() if self.available_pod_ids else self.next_pod_id
-                if not self.available_pod_ids: self.next_pod_id += 1
-                process = self.env.process(self.pod_worker(pod_id))
-                self.active_pods.append(self._Pod(pod_id, process))
+                pod_id = worker.available_pod_ids.pop() if worker.available_pod_ids else worker.next_pod_id
+                if not worker.available_pod_ids: worker.next_pod_id += 1
+                process = self.env.process(self.pod_worker(pod_id, worker))
+                worker.active_pods.append(self._Pod(pod_id, process))
         elif desired_replicas < current_replicas:
-            pods_to_remove = self.active_pods[desired_replicas:]
+            pods_to_remove = worker.active_pods[desired_replicas:]
             for pod in pods_to_remove:
                 if pod.process.is_alive and not pod.process.triggered: pod.process.interrupt()
-                self.available_pod_ids.add(pod.id)
-            self.active_pods = self.active_pods[:desired_replicas]
-
+                worker.available_pod_ids.add(pod.id)
+            worker.active_pods = worker.active_pods[:desired_replicas]
 
     def timeout_watcher(self, request: PriorityRequest):
         yield self.env.timeout(request.timeout)
         if not request.is_serviced:
             request.timed_out = True
-            # Usa il nuovo metodo unificato
-            self.metrics.record_request_failure(request, self.env.now)
-
+            self.metrics_agg.record_request_failure(request, self.env.now)
 
     def run(self, simulation_duration: float):
         self.env.process(self.request_generator())
         self.env.process(self.metrics_recorder())
-        self.scale_to(self.config.INITIAL_PODS)
+
+        for worker in self.worker_nodes:
+            self.scale_worker(worker, self.config.INITIAL_PODS_PER_WORKER)
+
         if self.config.HPA_ENABLED: HPA(self.env, self)
         self.env.run(until=simulation_duration)
