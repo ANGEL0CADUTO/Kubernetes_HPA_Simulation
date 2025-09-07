@@ -1,12 +1,14 @@
+
+
 from collections import defaultdict
 import simpy
-from simpy.resources.store import PriorityStore, PriorityItem
 from src.controller.hpa import HPA
 from src.model.request import PriorityRequest
 from src.service.service import PodService
 from src.service.traffic_profiler import DynamicTrafficProfiler
+from src.utils.sps_store import SPSStore
 
-class SimulatorWithPriority:
+class SimulatorSPS:
     class _Pod:
         def __init__(self, pod_id, process): self.id = pod_id; self.process = process
 
@@ -15,7 +17,10 @@ class SimulatorWithPriority:
         self.arrival_rng = arrival_rng; self.choice_rng = choice_rng; self.service_rng = service_rng
         self.lambda_function = lambda_function; self.service = PodService(service_rng, config)
         self.traffic_profiler = DynamicTrafficProfiler(metrics, config); self.timeouts_enabled = timeouts_enabled
-        self.request_queue = PriorityStore(self.env)
+
+        self.NORMAL_WEIGHTS = {self.config.Priority.HIGH: 50, self.config.Priority.MEDIUM: 30, self.config.Priority.LOW: 20}
+        self.request_queue = SPSStore(self.env, weights=self.NORMAL_WEIGHTS)
+
         self.active_pods = []; self.next_pod_id = 0; self.available_pod_ids = set()
 
     def request_generator(self):
@@ -32,26 +37,24 @@ class SimulatorWithPriority:
             timeout = self.config.REQUEST_TIMEOUTS[chosen_type]
             req_id_counter += 1
 
-            # --- FIX DEFINITIVO DEL COSTRUTTORE ---
+            # Chiamata al costruttore corretta
             new_request = PriorityRequest(
-                request_id=req_id_counter,
-                req_type=chosen_type,
-                arrival_time=self.env.now,
-                timeout=timeout,
-                service_time=service_time,
-                priority=prio  # La priorità va per ultima
+                request_id=req_id_counter, req_type=chosen_type,
+                arrival_time=self.env.now, timeout=timeout,
+                service_time=service_time, priority=prio
             )
-            # --- FINE FIX ---
 
             self.metrics.record_request_generation(self.env.now, prio, chosen_type)
             if self.timeouts_enabled: self.env.process(self.timeout_watcher(new_request))
-            self.request_queue.put(PriorityItem(prio.value, new_request))
+            self.request_queue.put(new_request)
 
     def pod_worker(self, pod_id):
         while True:
             try:
-                priority_item = yield self.request_queue.get()
-                request = priority_item.item
+                # Il pattern corretto: attendi il processo 'get' e prendi il suo valore
+                get_process = self.env.process(self.request_queue.get())
+                request = yield get_process
+
                 request.is_serviced = True
                 if request.timed_out: continue
                 wait_time = self.env.now - request.arrival_time
@@ -62,14 +65,62 @@ class SimulatorWithPriority:
             except simpy.Interrupt: break
 
     def metrics_recorder(self):
+        ALERT_THRESHOLD = 100
+        CRISIS_WEIGHTS = {self.config.Priority.HIGH: 90, self.config.Priority.MEDIUM: 10, self.config.Priority.LOW: 0}
+        in_crisis_mode = False
+
+        DEBUG_INTERVAL = 50.0; last_debug_time = 0.0
+        served_since_last_debug = defaultdict(int)
+
         while True:
-            total_queue_len = len(self.request_queue.items)
-            queue_lengths_per_prio = defaultdict(int)
-            for p_item in self.request_queue.items:
-                queue_lengths_per_prio[p_item.item.priority] += 1
+            # Usiamo gli helper per leggere lo stato
+            total_queue_len = self._get_total_queue_length()
+            queue_lengths_per_prio = self._get_queue_lengths_per_prio()
             pod_count = len(self.active_pods)
+
+            # Logica di controllo DSPS
+            if total_queue_len > ALERT_THRESHOLD and not in_crisis_mode:
+                in_crisis_mode = True
+                self.request_queue.update_weights(CRISIS_WEIGHTS)
+            elif total_queue_len <= ALERT_THRESHOLD and in_crisis_mode:
+                in_crisis_mode = False
+                self.request_queue.update_weights(self.NORMAL_WEIGHTS)
+
+            # Registrazione Metriche
             self.metrics.record_system_metrics(self.env.now, pod_count, total_queue_len, queue_lengths_per_prio)
+
+            # Logger di Debug
+            if self.env.now >= last_debug_time + DEBUG_INTERVAL:
+                print("\n" + "="*80)
+                print(f"DEBUG REPORT (DSPS) @ Time: {self.env.now:.2f}s")
+                print(f"  - In Modalità Crisi: {in_crisis_mode}")
+                print(f"  - Pesi Attuali: {{ {', '.join([f'{p.name}: {w}' for p,w in self.request_queue.weights.items()])} }}")
+                print(f"  - Pod Attivi: {pod_count}, Coda Totale: {total_queue_len}")
+                print(f"  - Coda Dettaglio: (HIGH: {queue_lengths_per_prio[self.config.Priority.HIGH]}, MEDIUM: {queue_lengths_per_prio[self.config.Priority.MEDIUM]}, LOW: {queue_lengths_per_prio[self.config.Priority.LOW]})")
+                stats = self.metrics.get_welford_statistics()
+                current_served_count = defaultdict(int)
+                for prio in self.config.Priority:
+                    for req_type, p_enum in self.config.REQUEST_TYPE_TO_PRIORITY.items():
+                        if p_enum == prio and req_type in stats['by_req_type']:
+                            current_served_count[prio] += stats['by_req_type'][req_type]['count']
+                print("  - Servite (ultimi 50s):")
+                for prio in self.config.Priority:
+                    served_in_interval = current_served_count[prio] - served_since_last_debug[prio]
+                    print(f"    - {prio.name}: {served_in_interval}")
+                    served_since_last_debug[prio] = current_served_count[prio]
+                print("="*80)
+                last_debug_time = self.env.now
+
             yield self.env.timeout(1)
+
+    def _get_total_queue_length(self):
+        return len(self.request_queue.items)
+
+    def _get_queue_lengths_per_prio(self):
+        lengths = defaultdict(int)
+        for item in self.request_queue.items:
+            lengths[item.priority] += 1
+        return lengths
 
     def scale_to(self, desired_replicas):
         current_replicas = len(self.active_pods)

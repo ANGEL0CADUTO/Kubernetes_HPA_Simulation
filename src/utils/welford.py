@@ -35,26 +35,30 @@ class Welford:
     def mean(self):
         if self.__m is None:
             return None
-        # Se è array 0-dimensionale, restituisci un float
-        if isinstance(self.__m, np.ndarray) and self.__m.shape == ():
-            return float(self.__m)
+        # Se è un array NumPy e contiene esattamente un elemento, restituiscilo come float.
+        # Questo gestisce sia array 0-D (shape == ()) sia array 1-D di dimensione 1 (shape == (1,)).
+        if isinstance(self.__m, np.ndarray) and self.__m.size == 1:
+            return float(self.__m.item()) # .item() estrae il valore scalare dall'array
         return self.__m
-
     @property
     def var_s(self):
         v = self.__getvar(ddof=1)
-        if isinstance(v, np.ndarray) and v.shape == ():
-            return float(v)
+        if v is None: # Aggiungi un controllo esplicito per None
+            return None
+        # Se è un array NumPy e contiene esattamente un elemento, restituiscilo come float.
+        if isinstance(v, np.ndarray) and v.size == 1:
+            return float(v.item()) # .item() estrae il valore scalare dall'array
         return v
 
     @property
     def var_p(self):
         v = self.__getvar(ddof=0)
-        if isinstance(v, np.ndarray) and v.shape == ():
-            return float(v)
+        if v is None: # Aggiungi un controllo esplicito per None
+            return None
+        # Se è un array NumPy e contiene esattamente un elemento, restituiscilo come float.
+        if isinstance(v, np.ndarray) and v.size == 1:
+            return float(v.item()) # .item() estrae il valore scalare dall'array
         return v
-
-
 
     def add(self, element, backup_flg=True):
         """
