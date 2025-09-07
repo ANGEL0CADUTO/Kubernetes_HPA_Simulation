@@ -30,48 +30,102 @@ class SteadyStateAnalyzer:
         self.abs_precision = getattr(config, "ABS_PRECISION", None)
         self.warmup_method = getattr(config, "WARMUP_METHOD", "MSER5")
 
-    # --------------------------
-    # Estrazione dati uniforme
-    # --------------------------
-    def extract_response_times(self):
-        """Restituisce lista di response times senza timestamp"""
-        try:
-            return [v for _, v in self.metrics.get_all_response_times_with_timestamps()]
-        except AttributeError:
-            print("Warning: impossibile estrarre response times")
-            return []
+    def extract_response_times_values(self) -> list[float]:
+        """
+        Estrae solo i valori dei tempi di risposta (senza timestamp)
+        per l'analisi del warm-up.
+        """
+        all_responses = self.metrics.get_all_response_times_with_timestamps()
+        return [resp_time for _, resp_time in all_responses]
 
-    # --------------------------
-    # Warm-up automatico
-    # --------------------------
-    def estimate_warmup(self, values):
+    def extract_full_response_data(self) -> list[tuple[float, float]]:
+        """
+        Estrae sia i timestamp che i valori dei tempi di risposta.
+        """
+        return self.metrics.get_all_response_times_with_timestamps()
+
+
+    def estimate_warmup(self, values_for_warmup_analysis: list[float], full_data_with_timestamps: list[tuple[float, float]]) -> float:
+        """
+        Stima la durata del warm-up in SECONDI.
+        Args:
+            values_for_warmup_analysis: Solo i valori (es. tempi di risposta) per l'analisi del warm-up.
+            full_data_with_timestamps: I dati completi (timestamp, valore) per convertire l'indice in tempo.
+        Returns:
+            float: Il tempo di warm-up stimato in secondi.
+        """
+        if not values_for_warmup_analysis or len(values_for_warmup_analysis) < 2:
+            print("  DEBUG(Analyzer): Dati insufficienti per stimare il warm-up, ritorno 0s.")
+            return 0.0
+
         if self.warmup_method == "WELCH":
-            return self._welch(values)
+            warmup_index = self._welch(np.array(values_for_warmup_analysis))
         elif self.warmup_method == "MSER5":
-            return self._mser5(values)
-        return 0
+            warmup_index = self._mser5(np.array(values_for_warmup_analysis))
+        else: # Default a un warmup minimo se il metodo non è riconosciuto
+            warmup_index = 0
 
-    def _welch(self, x):
+        # Ora convertiamo l'indice in un tempo
+        if warmup_index >= len(full_data_with_timestamps):
+
+            estimated_warmup_time =self.config.STEADY_SIMULATION_TIME * 0.8
+            print(f"  DEBUG(Analyzer): Warmup_index {warmup_index} fuori range ({len(full_data_with_timestamps)}). Assegno warmup di {estimated_warmup_time:.2f}s.")
+        else:
+            # Il tempo di warm-up è il timestamp di completamento all'indice stimato.
+            # Se warmup_index è 0, significa che non c'è warm-up o è molto breve,
+            # quindi il tempo di warm-up è il timestamp del primo evento.
+            estimated_warmup_time = full_data_with_timestamps[warmup_index][0] if warmup_index > 0 else full_data_with_timestamps[0][0]
+
+
+        # Per evitare che il warmup sia l'intera simulazione
+        if estimated_warmup_time >= self.config.STEADY_SIMULATION_TIME* 0.95:
+            estimated_warmup_time = self.config.STEADY_SIMULATION_TIME * 0.8 # Lascia almeno il 20% per lo steady-state
+            print(f"  DEBUG(Analyzer): Warmup stimato troppo lungo. Ridotto a {estimated_warmup_time:.2f}s.")
+
+        print(f"  DEBUG(Analyzer): Indice di warm-up stimato: {warmup_index}, Tempo di warm-up finale: {estimated_warmup_time:.2f}s.")
+        return estimated_warmup_time
+
+    def _welch(self, x: np.ndarray) -> int:
+
         window = max(5, int(min(50, len(x)) // 10))
-        if window < 1:
+        if window < 1 or len(x) < window * 2:
             return 0
         smoothed = np.convolve(x, np.ones(window)/window, mode='valid')
+        if len(smoothed) < 2:
+            return 0
         diffs = np.abs(np.diff(smoothed))
-        cutoff = np.argmax(diffs < np.std(smoothed)/100)
+        if np.std(smoothed) == 0:
+            return 0
+        valid_cutoffs = np.where(diffs < np.std(smoothed)/100)[0]
+        cutoff = valid_cutoffs[0] if len(valid_cutoffs) > 0 else 0
         return cutoff if cutoff > 0 else 0
 
-    def _mser5(self, x):
+    def _mser5(self, x: np.ndarray) -> int:
+
         n = len(x)
-        if n < 200:
+        if n < 200: # MSER5 ha bisogno di più dati
             return 0
         window = max(5, n // 20)
+        if window < 1 or n < window * 2:
+            return 0
+        # ...
         mv = np.convolve(x, np.ones(window)/window, mode="valid")
+        if len(mv) < 1:
+            return 0
+
         best_t0, best_var = 0, float("inf")
-        for t0 in range(0, n-window):
+
+        for t0 in range(0, n - window * 2):
             resid = x[t0:]
+
             if len(resid) < window*2:
                 break
-            v = np.var(np.convolve(resid, np.ones(window)/window, mode="valid"), ddof=1)
+
+            convolved_resid = np.convolve(resid, np.ones(window)/window, mode="valid")
+            if len(convolved_resid) < 2:
+                continue
+
+            v = np.var(convolved_resid, ddof=1)
             if v < best_var:
                 best_var, best_t0 = v, t0
         return best_t0

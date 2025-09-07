@@ -19,7 +19,7 @@ plt.rcParams['savefig.facecolor'] = 'white'       # Assicura che il colore di sf
 plt.rcParams['savefig.transparent'] = False
 
 class SteadyStatePlotter:
-    def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, metrics_wfq: MetricsWithPriority,config, use_log_scale_infinite=False):
+    def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, metrics_wfq: MetricsWithPriority,config, use_log_scale_infinite=True):
         self.metrics = metrics
         self.metrics_prio = metrics_prio
         self.metrics_wfq = metrics_wfq
