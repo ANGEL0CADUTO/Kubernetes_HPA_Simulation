@@ -39,7 +39,7 @@ class newPlotter:
 
         times, values = zip(*all_responses)
         cumulative_average = np.cumsum(values) / np.arange(1, len(values) + 1)
-        ax.plot(times, cumulative_average, color=color, label=label, linewidth=2.0, alpha=0.8)
+        ax.plot(times, cumulative_average, color=color, label=label, linewidth=1.0, alpha=0.8)
 
     @staticmethod
     def _style_subplot(ax: plt.Axes, title: str, y_max: float):
@@ -47,11 +47,16 @@ class newPlotter:
         Applica uno stile standardizzato a un subplot.
         """
         ax.set_title(title, fontsize=16, pad=10)
-        ax.set_ylabel('Tempo di Risposta Medio (s)', fontsize=14)
-        ax.set_ylim(0, y_max)
+        ax.set_ylabel('Tempo di Risposta Medio (s) [Scala Log]', fontsize=14) # Aggiorna l'etichetta
+
+        # --- MODIFICHE QUI ---
+        ax.set_yscale('log')  # Imposta la scala logaritmica sull'asse Y
+        # Modifica il limite inferiore per evitare l'errore con lo zero
+        ax.set_ylim(bottom=0.01, top=y_max)
+        # -------------------
+
         ax.tick_params(axis='both', which='major', labelsize=12)
         ax.legend(fontsize=12, loc='upper right')
-        # La griglia è ora gestita dallo stile globale applicato all'inizio
         ax.grid(True, which='both', linestyle='--', linewidth=0.7)
 
 
@@ -108,7 +113,7 @@ class newPlotter:
             # Aggiungi un tick minore (senza etichetta) ogni 25 unità
             ax2.xaxis.set_minor_locator(mticker.MultipleLocator(25))
 
-            y_axis_limit = 5.5
+            y_axis_limit = 10
             newPlotter._style_subplot(ax1, 'Modello Baseline (FIFO)', y_axis_limit)
             newPlotter._style_subplot(ax2, 'Modello Migliorato (Priorità)', y_axis_limit)
 

@@ -4,7 +4,6 @@ import os
 from analysis.plotter import Plotter
 from src import config
 from src.analysis.new_plotter import newPlotter
-from src.analysis.plotter_transient import plot_transient_comparison
 from src.simulation.simulator import Simulator
 from src.simulation.simulator_wfq import SimulatorWFQ
 from src.simulation.simulator_with_priority import SimulatorWithPriority

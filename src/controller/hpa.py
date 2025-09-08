@@ -26,32 +26,22 @@ class HPA:
                 queue_len = len(worker.queue.items)
                 queue_per_pod = queue_len / pod_count if pod_count > 0 else float('inf')
                 worker_metrics.append({
-                    'worker': worker,
-                    'pod_count': pod_count,
-                    'queue_len': queue_len,
-                    'queue_per_pod': queue_per_pod
+                    'worker': worker, 'pod_count': pod_count,
+                    'queue_len': queue_len, 'queue_per_pod': queue_per_pod
                 })
 
-            if not worker_metrics:
-                continue
+            if not worker_metrics: continue
 
             hotspot = max(worker_metrics, key=lambda x: x['queue_per_pod'])
             coldest = min(worker_metrics, key=lambda x: x['queue_per_pod'])
             total_pod_count = sum(m['pod_count'] for m in worker_metrics)
 
-            # --- BLOCCO DI DECISIONE CORRETTO ---
-            # Intercetta il caso di metrica infinita per prevenire l'OverflowError.
             if hotspot['queue_per_pod'] == float('inf'):
-                # CASO SPECIALE: Un worker ha richieste ma 0 pod. È un'emergenza.
-                # Bypassiamo il calcolo e richiediamo uno scale-up immediato dello step massimo.
                 desired_replicas_raw = total_pod_count + self.config.MAX_SCALE_STEP
             elif self.config.TARGET_QUEUE_LENGTH_PER_POD > 0:
-                # Calcolo standard quando le metriche sono finite e valide.
                 desired_replicas_raw = math.ceil(total_pod_count * (hotspot['queue_per_pod'] / self.config.TARGET_QUEUE_LENGTH_PER_POD))
             else:
-                # Fallback se la metrica target non è configurata.
                 desired_replicas_raw = total_pod_count
-            # --- FINE BLOCCO CORRETTO ---
 
             if desired_replicas_raw > total_pod_count:
                 desired_replicas = min(desired_replicas_raw, total_pod_count + self.config.MAX_SCALE_STEP)
@@ -65,15 +55,25 @@ class HPA:
             if desired_replicas > total_pod_count:
                 if self.env.now >= self.last_scale_up_time + self.config.SCALE_UP_COOLDOWN:
                     pods_to_add = desired_replicas - total_pod_count
-                    new_pod_count_on_hotspot = hotspot['pod_count'] + pods_to_add
-                    self.simulator.scale_worker(hotspot['worker'], new_pod_count_on_hotspot)
-                    self.last_scale_up_time = self.env.now
+
+                    # MODIFICA: Applica il limite massimo per worker
+                    current_pods_on_hotspot = hotspot['pod_count']
+                    # Calcola il nuovo numero di pod, ma non superare il limite per worker
+                    new_pod_count_on_hotspot = min(
+                        current_pods_on_hotspot + pods_to_add,
+                        self.config.MAX_PODS_PER_WORKER
+                    )
+
+                    # Scala solo se c'è effettivamente spazio per nuovi pod sul worker
+                    if new_pod_count_on_hotspot > current_pods_on_hotspot:
+                        self.simulator.scale_worker(hotspot['worker'], new_pod_count_on_hotspot)
+                        self.last_scale_up_time = self.env.now
+
             elif desired_replicas < total_pod_count:
                 if self.env.now >= self.last_scale_down_time + self.config.SCALE_DOWN_COOLDOWN:
                     pods_to_remove = total_pod_count - desired_replicas
                     if coldest['pod_count'] > 0:
                         new_pod_count_on_coldest = max(0, coldest['pod_count'] - pods_to_remove)
-                        # Assicuriamoci di non scendere sotto 1 pod se ci sono richieste in coda
                         if coldest['queue_len'] > 0 and new_pod_count_on_coldest == 0:
                             new_pod_count_on_coldest = 1
                         self.simulator.scale_worker(coldest['worker'], new_pod_count_on_coldest)
