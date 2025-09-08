@@ -1,9 +1,11 @@
+
 # In src/steady_state_analysis/steady_state_plotter.py
 import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from scipy.interpolate import make_interp_spline # AGGIUNGI QUESTA IMPORTAZIONE
 
 from src.utils.acs import batch_means, compute_batch_size
 from src.utils.metrics import Metrics
@@ -12,11 +14,6 @@ from src.config import RequestType
 from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
 from src.utils.welford import Welford
 
-plt.style.use('ggplot')
-plt.rcParams['figure.facecolor'] = 'white'        # Rende bianco lo sfondo dell'intera figura.
-
-plt.rcParams['savefig.facecolor'] = 'white'       # Assicura che il colore di sfondo della figura salvata sia bianco.
-plt.rcParams['savefig.transparent'] = False
 
 class SteadyStatePlotter:
     def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, metrics_wfq: MetricsWithPriority,config, use_log_scale_infinite=True):
@@ -78,7 +75,7 @@ class SteadyStatePlotter:
 
     def _plot_single_scenario_times(self, analyzer, metrics, scenario_name, warmup_duration, output_dir, file_suffix, color_palette):
         is_prio = isinstance(metrics, MetricsWithPriority)
-        fig, axes = plt.subplots(1, 2, figsize=(20, 9), sharey=True)
+        fig, axes = plt.subplots(1, 2, figsize=(20, 9), sharey=True, layout="constrained") # MODIFIED layout
 
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
         category_names = [req.name.replace("_", " ").title() for req in all_req_types]
@@ -110,11 +107,13 @@ class SteadyStatePlotter:
 
                 values = [v for t, v in raw_data if t >= warmup_duration]
 
-                if len(values) < 30:
+                if len(values) < 30: # Minimum data points for batch means to be meaningful
                     continue
 
+                # Ensure there are enough points for batch means calculation
+                # compute_batch_size might return None, so handle it carefully
                 b, k, _ = compute_batch_size(values, threshold=self.config.BATCH_THRESHOLD)
-                if b is None or k is None or b * k == 0:
+                if b is None or k is None or b * k == 0 or b * k > len(values): # Added check for b*k > len(values)
                     continue
 
                 batch_means_res = batch_means(values, b, k, confidence=self.config.CONFIDENCE_LEVEL)
@@ -188,14 +187,14 @@ class SteadyStatePlotter:
             ax.set_ylim(bottom=bottom, top=top * 1.03)
 
         fig.suptitle(f"Tempi Medi (Steady State) - {scenario_name}", fontsize=20, fontweight="bold")
-        plt.tight_layout()
-        fig.subplots_adjust(top=0.90, bottom=0.20, left=0.07, right=0.98)
+        # plt.tight_layout() # Rimosso, usa layout="constrained"
+        # fig.subplots_adjust(top=0.90, bottom=0.20, left=0.07, right=0.98) # Rimosso, usa layout="constrained"
         self._save_plot(output_dir, f"times{file_suffix}.png", fig)
 
     def plot_steady_state_times_by_type(self, analyzer_baseline, analyzer_prio, analyzer_wfq, warmup, batches, output_dir): # MODIFIED: added analyzer_wfq
         print("Generazione grafico di CONFRONTO per tempi per tipo di richiesta...")
 
-        fig, axes = plt.subplots(1, 2, figsize=(20, 9), sharey=True)
+        fig, axes = plt.subplots(1, 2, figsize=(20, 9), sharey=True, layout="constrained") # MODIFIED layout
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
         category_names = [req.name.replace("_", " ").title() for req in all_req_types]
 
@@ -348,13 +347,13 @@ class SteadyStatePlotter:
             ax.set_ylim(bottom=current_bottom, top=current_top * 1.03)
 
         fig.suptitle("Confronto Tempi Medi (Steady State) per Tipo con IC al 95%", fontsize=20, fontweight="bold")
-        plt.tight_layout()
-        fig.subplots_adjust(top=0.90)
+        # plt.tight_layout() # Rimosso, usa layout="constrained"
+        # fig.subplots_adjust(top=0.90) # Rimosso, usa layout="constrained"
         self._save_plot(output_dir, "times_comparison.png", fig)
 
 
     def _plot_single_scenario_loss(self, results, scenario_name, color, output_dir, filename):
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(8, 6), layout="constrained") # MODIFIED layout
 
         mean_val = float(results['mean'])
         half_width = float(results['half_width'])
@@ -379,7 +378,7 @@ class SteadyStatePlotter:
                         xytext=(0, 12), textcoords='offset points',
                         ha='center', va='bottom', fontsize=10)
 
-        plt.tight_layout()
+        # plt.tight_layout() # Rimosso, usa layout="constrained"
         self._save_plot(output_dir, filename, fig)
 
 
@@ -408,7 +407,7 @@ class SteadyStatePlotter:
                     idx = 0
                 steady_values = [float(v) for v in outcomes[idx:]]
 
-            if len(steady_values) < 2:
+            if len(steady_values) < 2: # Minimo 2 punti per compute_batch_size
                 return None
 
             b_k_rho = compute_batch_size(steady_values, k_initial_target=getattr(self.config, 'BATCH_K', 64), threshold=threshold)
@@ -416,7 +415,7 @@ class SteadyStatePlotter:
                 return None
             b, k = int(b_k_rho[0]), int(b_k_rho[1])
 
-            if b * k > len(steady_values):
+            if b * k == 0 or b * k > len(steady_values): # Assicurati che il prodotto b*k non superi la lunghezza dei dati
                 return None
 
             res = batch_means(steady_values, b, k, confidence=confidence_level)
@@ -450,7 +449,7 @@ class SteadyStatePlotter:
             print("Warning: Nessun risultato per la probabilità di perdita con WFQ.")
 
 
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(8, 6), layout="constrained") # MODIFIED layout
         plot_data = []
         if baseline_results:
             plot_data.append({'Scenario': 'Senza Priorità', 'Mean': baseline_results['mean'], 'Half_Width': baseline_results['half_width']})
@@ -497,51 +496,88 @@ class SteadyStatePlotter:
                             xytext=(0, 14), textcoords='offset points',
                             ha='center', va='bottom', fontsize=9)
 
-        plt.tight_layout()
+        # plt.tight_layout() # Rimosso, usa layout="constrained"
         self._save_plot(output_dir, "loss_probability_comparison.png", fig)
 
 
     def _plot_convergence_baseline_by_type(self, output_dir, warmup_duration):
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
         for req_type, history in self.metrics.response_times_history.items():
             if history:
                 history.sort(key=lambda x: x[0])
                 timestamps, values = zip(*history)
-                ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1) # Calculate cumulative means once
+
+                if len(timestamps) > 1: # Sufficient points for spline interpolation
+                    k_val = min(3, len(timestamps) - 1) # Use k=3 for cubic, or less if not enough points
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(timestamps), max(timestamps), 500)
+                        spl = make_interp_spline(timestamps, cumulative_means, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, label=f'{req_type.name} (Smoothed)', color=self.req_type_colors.get(req_type), linewidth=2)
+                    else: # Fallback to raw plot if only 1 point or less
+                        ax.plot(timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                else: # Fallback for single point
+                    ax.plot(timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+
         ax.set_title('Analisi Convergenza per Tipo (Baseline)'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
         ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_duration}s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend(title='Tipo di Richiesta')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "baseline_convergence_by_type.png", fig)
 
     def _plot_convergence_prio_by_type(self, output_dir, warmup_duration):
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
         for req_type in sorted(self.metrics_prio.response_times_by_req_type.keys(), key=lambda x: x.name):
             response_times = self.metrics_prio.response_times_by_req_type.get(req_type, [])
             timestamps = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
             if response_times and len(response_times) == len(timestamps):
                 history = sorted(zip(timestamps, response_times), key=lambda x: x[0])
                 sorted_timestamps, sorted_values = zip(*history)
-                ax.plot(sorted_timestamps, np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1), label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                cumulative_means = np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1)
+
+                if len(sorted_timestamps) > 1: # Sufficient points for spline interpolation
+                    k_val = min(3, len(sorted_timestamps) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(sorted_timestamps), max(sorted_timestamps), 500)
+                        spl = make_interp_spline(sorted_timestamps, cumulative_means, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, label=f'{req_type.name} (Smoothed)', color=self.req_type_colors.get(req_type), linewidth=2)
+                    else: # Fallback to raw plot
+                        ax.plot(sorted_timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                else: # Fallback for single point
+                    ax.plot(sorted_timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
         ax.set_title('Analisi Convergenza per Tipo (Con Priorità)'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
         ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_duration}s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend(title='Tipo di Richiesta')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "prio_convergence_by_type.png", fig)
 
     def _plot_convergence_wfq_by_type(self, output_dir, warmup_duration): # ADDED THIS METHOD
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
         for req_type in sorted(self.metrics_wfq.response_times_by_req_type.keys(), key=lambda x: x.name):
             response_times = self.metrics_wfq.response_times_by_req_type.get(req_type, [])
             timestamps = self.metrics_wfq.completion_timestamps_by_req_type.get(req_type, [])
             if response_times and len(response_times) == len(timestamps):
                 history = sorted(zip(timestamps, response_times), key=lambda x: x[0])
                 sorted_timestamps, sorted_values = zip(*history)
-                ax.plot(sorted_timestamps, np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1), label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                cumulative_means = np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1)
+
+                if len(sorted_timestamps) > 1: # Sufficient points for spline interpolation
+                    k_val = min(3, len(sorted_timestamps) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(sorted_timestamps), max(sorted_timestamps), 500)
+                        spl = make_interp_spline(sorted_timestamps, cumulative_means, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, label=f'{req_type.name} (Smoothed)', color=self.req_type_colors.get(req_type), linewidth=2)
+                    else: # Fallback to raw plot
+                        ax.plot(sorted_timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
+                else: # Fallback for single point
+                    ax.plot(sorted_timestamps, cumulative_means, label=f'{req_type.name}', color=self.req_type_colors.get(req_type), linewidth=2)
         ax.set_title('Analisi Convergenza per Tipo (WFQ)'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
         ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_duration}s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend(title='Tipo di Richiesta')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "wfq_convergence_by_type.png", fig)
 
 
@@ -555,42 +591,70 @@ class SteadyStatePlotter:
         self._plot_convergence_wfq_by_type(output_dir, warmup_duration=wfq_warmup) # ADDED
 
         print("Generazione grafico di CONFRONTO di convergenza per tipo...")
-        fig, ax = plt.subplots(figsize=(14, 8))
+        fig, ax = plt.subplots(figsize=(14, 8), layout="constrained") # MODIFIED layout
+
+        # Helper to plot with spline
+        def plot_smoothed_cumulative_mean(ax, timestamps, values, label, color, linestyle):
+            if values and len(timestamps) > 1:
+                cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+                k_val = min(3, len(timestamps) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(timestamps), max(timestamps), 500)
+                    spl = make_interp_spline(timestamps, cumulative_means, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, label=label, color=color, linestyle=linestyle, linewidth=2.5)
+                else:
+                    ax.plot(timestamps, cumulative_means, label=label, color=color, linestyle=linestyle, linewidth=2.5)
+            elif values: # Not enough points for spline, plot raw
+                ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), label=label, color=color, linestyle=linestyle, linewidth=2.5)
+
+
         for req_type, history in self.metrics.response_times_history.items():
             if history:
                 timestamps, values = zip(*sorted(history, key=lambda x: x[0]))
-                ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), label=f'{req_type.name} (Baseline)', color=self.req_type_colors.get(req_type), linestyle='-', linewidth=2)
+                plot_smoothed_cumulative_mean(ax, timestamps, values, f'{req_type.name} (Baseline)', self.req_type_colors.get(req_type), '-')
         for req_type in sorted(self.metrics_prio.response_times_by_req_type.keys(), key=lambda x: x.name):
             response_times = self.metrics_prio.response_times_by_req_type.get(req_type, [])
             timestamps = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
             if response_times and len(response_times) == len(timestamps):
                 sorted_timestamps, sorted_values = zip(*sorted(zip(timestamps, response_times), key=lambda x: x[0]))
-                ax.plot(sorted_timestamps, np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1), label=f'{req_type.name} (Priorità)', color=self.req_type_colors.get(req_type), linestyle='--', linewidth=2.5)
+                plot_smoothed_cumulative_mean(ax, sorted_timestamps, sorted_values, f'{req_type.name} (Priorità)', self.req_type_colors.get(req_type), '--')
         for req_type in sorted(self.metrics_wfq.response_times_by_req_type.keys(), key=lambda x: x.name): # ADDED
             response_times = self.metrics_wfq.response_times_by_req_type.get(req_type, [])
             timestamps = self.metrics_wfq.completion_timestamps_by_req_type.get(req_type, [])
             if response_times and len(response_times) == len(timestamps):
                 sorted_timestamps, sorted_values = zip(*sorted(zip(timestamps, response_times), key=lambda x: x[0]))
-                ax.plot(sorted_timestamps, np.cumsum(sorted_values) / np.arange(1, len(sorted_values) + 1), label=f'{req_type.name} (WFQ)', color=self.req_type_colors.get(req_type), linestyle=':', linewidth=2.5) # ADDED, changed linestyle
+                plot_smoothed_cumulative_mean(ax, sorted_timestamps, sorted_values, f'{req_type.name} (WFQ)', self.req_type_colors.get(req_type), ':') # ADDED, changed linestyle
 
         ax.axvline(x=baseline_warmup, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({baseline_warmup}s)')
         ax.set_title('Confronto Convergenza per Tipo di Richiesta'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7)
         ax.legend(title='Scenario e Tipo', bbox_to_anchor=(1.04, 1), loc="upper left")
-        plt.tight_layout(rect=[0, 0, 0.85, 1])
+        # plt.tight_layout(rect=[0, 0, 0.85, 1]) # RIMOSSO
         self._save_plot(output_dir, "convergence_by_type_comparison.png", fig)
 
     def _plot_convergence_overall(self, all_responses, scenario_name, output_dir, filename, color, warmup_duration):
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
         if all_responses:
             timestamps, values = zip(*all_responses)
-            ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), color=color, label='Tempo Risposta Medio Cumulativo')
+            cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+            if len(timestamps) > 1:
+                k_val = min(3, len(timestamps) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(timestamps), max(timestamps), 500)
+                    spl = make_interp_spline(timestamps, cumulative_means, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, label='Tempo Risposta Medio Cumulativo (Smoothed)')
+                else:
+                    ax.plot(timestamps, cumulative_means, color=color, label='Tempo Risposta Medio Cumulativo')
+            else:
+                ax.plot(timestamps, cumulative_means, color=color, label='Tempo Risposta Medio Cumulativo')
             ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_duration}s)')
         else:
             ax.text(0.5, 0.5, "Nessun dato disponibile", ha='center', va='center', transform=ax.transAxes)
         ax.set_title(f'Analisi Convergenza Tempo Risposta Medio ({scenario_name})'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio (s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, filename, fig)
 
     def plot_convergence_analysis_overall(self, output_dir, warmup_durations: dict):
@@ -607,34 +671,57 @@ class SteadyStatePlotter:
         self._plot_convergence_overall(all_responses_wfq, "WFQ", output_dir, "wfq_convergence_overall.png", '#32CD32', warmup_duration=wfq_warmup) # ADDED
 
         print("Generazione grafico di CONFRONTO di convergenza generale...")
-        fig, ax = plt.subplots(figsize=(12, 7))
-        if all_responses_base:
-            timestamps, values = zip(*all_responses_base)
-            ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), color='r', label='Senza Priorità')
-        if all_responses_prio:
-            timestamps, values = zip(*all_responses_prio)
-            ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), color='b', label='Con Priorità')
-        if all_responses_wfq: # ADDED
-            timestamps, values = zip(*all_responses_wfq)
-            ax.plot(timestamps, np.cumsum(values) / np.arange(1, len(values) + 1), color='#32CD32', label='WFQ') # ADDED
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
+
+        # Helper to plot with spline
+        def plot_smoothed_cumulative_mean_overall(ax, all_responses, color, label):
+            if all_responses:
+                timestamps, values = zip(*all_responses)
+                cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+                if len(timestamps) > 1:
+                    k_val = min(3, len(timestamps) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(timestamps), max(timestamps), 500)
+                        spl = make_interp_spline(timestamps, cumulative_means, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, color=color, label=label)
+                    else:
+                        ax.plot(timestamps, cumulative_means, color=color, label=label)
+                else:
+                    ax.plot(timestamps, cumulative_means, color=color, label=label)
+
+        plot_smoothed_cumulative_mean_overall(ax, all_responses_base, 'r', 'Senza Priorità')
+        plot_smoothed_cumulative_mean_overall(ax, all_responses_prio, 'b', 'Con Priorità')
+        plot_smoothed_cumulative_mean_overall(ax, all_responses_wfq, '#32CD32', 'WFQ') # ADDED
         if all_responses_base or all_responses_prio or all_responses_wfq: # MODIFIED
             ax.axvline(x=baseline_warmup, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({baseline_warmup}s)')
         ax.set_title('Confronto Convergenza del Tempo di Risposta Medio'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Risposta Medio (s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend(title='Scenario')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "convergence_overall_comparison.png", fig)
 
     def _plot_wait_time_trend(self, all_waits, scenario_name, output_dir, filename, color, warmup_duration):
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
         if all_waits:
             times, values = zip(*all_waits)
-            ax.plot(times, np.cumsum(values) / np.arange(1, len(values) + 1), color=color, label='Tempo Attesa Medio Cumulativo')
+            cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+            if len(times) > 1:
+                k_val = min(3, len(times) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(times), max(times), 500)
+                    spl = make_interp_spline(times, cumulative_means, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, label='Tempo Attesa Medio Cumulativo (Smoothed)')
+                else:
+                    ax.plot(times, cumulative_means, color=color, label='Tempo Attesa Medio Cumulativo')
+            else:
+                ax.plot(times, cumulative_means, color=color, label='Tempo Attesa Medio Cumulativo')
             ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({warmup_duration}s)')
         else:
             ax.text(0.5, 0.5, "Nessun dato disponibile", ha='center', va='center', transform=ax.transAxes)
         ax.set_title(f'Evoluzione del Tempo di Attesa Medio ({scenario_name})'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Attesa Medio Cumulativo (s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, filename, fig)
 
     def plot_wait_time_trend_analysis(self, output_dir, warmup: dict):
@@ -667,16 +754,28 @@ class SteadyStatePlotter:
         self._plot_wait_time_trend(all_waits_wfq, "WFQ", output_dir, "wait_time_trend_wfq.png", '#32CD32', warmup_duration=wfq_warmup_duration) # ADDED
 
         print("Generazione grafico di CONFRONTO andamento tempo di attesa...")
-        fig, ax = plt.subplots(figsize=(12, 7))
-        if all_waits_base:
-            times, values = zip(*all_waits_base)
-            ax.plot(times, np.cumsum(values) / np.arange(1, len(values) + 1), color='r', label='Senza Priorità')
-        if all_waits_prio:
-            times, values = zip(*all_waits_prio)
-            ax.plot(times, np.cumsum(values) / np.arange(1, len(values) + 1), color='b', label='Con Priorità')
-        if all_waits_wfq: # ADDED
-            times, values = zip(*all_waits_wfq)
-            ax.plot(times, np.cumsum(values) / np.arange(1, len(values) + 1), color='#32CD32', label='WFQ') # ADDED
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained") # MODIFIED layout
+
+        # Helper to plot with spline
+        def plot_smoothed_cumulative_mean_wait(ax, all_waits, color, label):
+            if all_waits:
+                times, values = zip(*all_waits)
+                cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+                if len(times) > 1:
+                    k_val = min(3, len(times) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(times), max(times), 500)
+                        spl = make_interp_spline(times, cumulative_means, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, color=color, label=label)
+                    else:
+                        ax.plot(times, cumulative_means, color=color, label=label)
+                else:
+                    ax.plot(times, cumulative_means, color=color, label=label)
+
+        plot_smoothed_cumulative_mean_wait(ax, all_waits_base, 'r', 'Senza Priorità')
+        plot_smoothed_cumulative_mean_wait(ax, all_waits_prio, 'b', 'Con Priorità')
+        plot_smoothed_cumulative_mean_wait(ax, all_waits_wfq, '#32CD32', 'WFQ') # ADDED
 
 
         ax.axvline(x=baseline_warmup_duration, color='k', linestyle=':', linewidth=2, label=f'Fine Warm-up ({baseline_warmup_duration}s)')
@@ -684,20 +783,30 @@ class SteadyStatePlotter:
         ax.set_title('Confronto Evoluzione del Tempo di Attesa Medio')
         ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Tempo di Attesa Medio Cumulativo (s)')
         ax.grid(True, which='both', linestyle='--', alpha=0.7); ax.legend(title='Scenario')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "wait_time_trend_comparison.png", fig)
 
     def _plot_pod_history(self, times, counts, scenario_name, output_dir, filename, color, warmup_duration):
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
         if times and counts:
-            ax.plot(times, counts, color=color, label='Numero di Pod', alpha=0.8, linewidth=1.5)
+            if len(times) > 1:
+                k_val = min(3, len(times) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(times), max(times), 500)
+                    spl = make_interp_spline(times, counts, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, label='Numero di Pod (Smoothed)', alpha=0.8, linewidth=1.5)
+                else:
+                    ax.plot(times, counts, color=color, label='Numero di Pod', alpha=0.8, linewidth=1.5)
+            else:
+                ax.plot(times, counts, color=color, label='Numero di Pod', alpha=0.8, linewidth=1.5)
             ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2.5, label=f'Fine Warm-up ({warmup_duration}s)')
         else:
             ax.text(0.5, 0.5, "Nessun dato disponibile", ha='center', va='center', transform=ax.transAxes)
         ax.set_title(f'Evoluzione del Numero di Pod ({scenario_name})'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Numero di Pod Attivi')
         ax.set_ylim(bottom=0, top=self.config.MAX_PODS + 1)
         ax.grid(True, which='both', linestyle='--', alpha=0.6); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, filename, fig)
 
     def plot_pod_history_analysis(self, output_dir, warmup: dict):
@@ -711,25 +820,52 @@ class SteadyStatePlotter:
         self._plot_pod_history(self.metrics_wfq.timestamps, self.metrics_wfq.pod_counts, "WFQ", output_dir, "pod_history_wfq.png", '#32CD32', warmup_duration=wfq_warmup_duration) # ADDED
 
         print("Generazione grafico di CONFRONTO storico dei Pod...")
-        fig, ax = plt.subplots(figsize=(14, 7))
-        if times_b and pods_b: ax.plot(times_b, pods_b, color='r', label='Senza Priorità', alpha=0.8, linewidth=1.5)
-        if self.metrics_prio.timestamps and self.metrics_prio.pod_counts: ax.plot(self.metrics_prio.timestamps, self.metrics_prio.pod_counts, color='b', label='Con Priorità', alpha=0.8, linewidth=1.5)
-        if self.metrics_wfq.timestamps and self.metrics_wfq.pod_counts: ax.plot(self.metrics_wfq.timestamps, self.metrics_wfq.pod_counts, color='#32CD32', label='WFQ', alpha=0.8, linewidth=1.5) # ADDED
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
+
+        # Helper to plot with spline
+        def plot_smoothed_pod_history(ax, times, counts, color, label):
+            if times and counts:
+                if len(times) > 1:
+                    k_val = min(3, len(times) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(times), max(times), 500)
+                        spl = make_interp_spline(times, counts, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, color=color, label=label, alpha=0.8, linewidth=1.5)
+                    else:
+                        ax.plot(times, counts, color=color, label=label, alpha=0.8, linewidth=1.5)
+                else:
+                    ax.plot(times, counts, color=color, label=label, alpha=0.8, linewidth=1.5)
+
+        plot_smoothed_pod_history(ax, times_b, pods_b, 'r', 'Senza Priorità')
+        plot_smoothed_pod_history(ax, self.metrics_prio.timestamps, self.metrics_prio.pod_counts, 'b', 'Con Priorità')
+        plot_smoothed_pod_history(ax, self.metrics_wfq.timestamps, self.metrics_wfq.pod_counts, '#32CD32', 'WFQ') # ADDED
 
         ax.axvline(x=baseline_warmup_duration, color='k', linestyle=':', linewidth=2.5, label=f'Fine Warm-up ({baseline_warmup_duration}s)')
         ax.set_title('Confronto Evoluzione del Numero di Pod'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Numero di Pod Attivi')
         ax.set_ylim(bottom=0, top=self.config.MAX_PODS + 1); ax.grid(True, which='both', linestyle='--', alpha=0.6); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "pod_history_comparison.png", fig)
 
     def _plot_queue_history(self, times, queue_lengths, scenario_name, output_dir, filename, color, use_log_scale, warmup_duration):
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
         ylabel = 'Numero Richieste in Coda'
 
         dark_color_map = {'r': 'darkred', 'b': 'darkblue', '#32CD32': 'darkgreen'} # MODIFIED
 
         if times and queue_lengths:
-            ax.plot(times, queue_lengths, color=color, label='Lunghezza Coda', alpha=0.7, linewidth=1.5)
+            if len(times) > 1:
+                k_val = min(3, len(times) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(times), max(times), 500)
+                    spl = make_interp_spline(times, queue_lengths, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, label='Lunghezza Coda (Smoothed)', alpha=0.7, linewidth=1.5)
+                else:
+                    ax.plot(times, queue_lengths, color=color, label='Lunghezza Coda', alpha=0.7, linewidth=1.5)
+            else:
+                ax.plot(times, queue_lengths, color=color, label='Lunghezza Coda', alpha=0.7, linewidth=1.5)
+
             steady_queue = [q for t, q in zip(times, queue_lengths) if t >= warmup_duration]
 
             dark_color = dark_color_map.get(color, color)
@@ -746,7 +882,7 @@ class SteadyStatePlotter:
         ax.set_title(f'Evoluzione Lunghezza della Coda ({scenario_name})')
         ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel(ylabel)
         ax.grid(True, which='both', linestyle='--', alpha=0.6); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, filename, fig)
 
     def plot_queue_history_analysis(self, warmup: dict, output_dir, use_log_scale=True):
@@ -760,26 +896,36 @@ class SteadyStatePlotter:
         self._plot_queue_history(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths, "WFQ", output_dir, f"queue_history_wfq{'_log' if use_log_scale else ''}.png", '#32CD32', use_log_scale, warmup_duration=wfq_warmup_duration) # ADDED
 
         print("Generazione grafico di CONFRONTO storico della Coda...")
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
         ylabel = 'Numero Richieste in Coda'
-        if times_b and queue_b:
-            ax.plot(times_b, queue_b, color='r', label='Senza Priorità', alpha=0.7, linewidth=1.5)
-            if steady_queue_b := [q for t, q in zip(times_b, queue_b) if t >= baseline_warmup_duration ]:
-                ax.axhline(np.mean(steady_queue_b), color='darkred', linestyle=':', label=f'Media Steady (Baseline): {np.mean(steady_queue_b):.2f}')
-        if self.metrics_prio.timestamps and self.metrics_prio.queue_lengths:
-            ax.plot(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths, color='b', label='Con Priorità', alpha=0.7, linewidth=1.5)
-            if steady_queue_p := [q for t, q in zip(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths) if t >= priority_warmup_duration]:
-                ax.axhline(np.mean(steady_queue_p), color='darkblue', linestyle=':', label=f'Media Steady (Priorità): {np.mean(steady_queue_p):.2f}')
-        if self.metrics_wfq.timestamps and self.metrics_wfq.queue_lengths: # ADDED
-            ax.plot(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths, color='#32CD32', label='WFQ', alpha=0.7, linewidth=1.5) # ADDED
-            if steady_queue_wfq := [q for t, q in zip(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths) if t >= wfq_warmup_duration]: # ADDED
-                ax.axhline(np.mean(steady_queue_wfq), color='darkgreen', linestyle=':', label=f'Media Steady (WFQ): {np.mean(steady_queue_wfq):.2f}') # ADDED
+
+        # Helper to plot with spline
+        def plot_smoothed_queue_history(ax, times, queue_lengths, color, label, warmup_duration, steady_line_color):
+            if times and queue_lengths:
+                if len(times) > 1:
+                    k_val = min(3, len(times) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(times), max(times), 500)
+                        spl = make_interp_spline(times, queue_lengths, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, color=color, label=label, alpha=0.7, linewidth=1.5)
+                    else:
+                        ax.plot(times, queue_lengths, color=color, label=label, alpha=0.7, linewidth=1.5)
+                else:
+                    ax.plot(times, queue_lengths, color=color, label=label, alpha=0.7, linewidth=1.5)
+
+                if steady_queue := [q for t, q in zip(times, queue_lengths) if t >= warmup_duration ]:
+                    ax.axhline(np.mean(steady_queue), color=steady_line_color, linestyle=':', label=f'Media Steady ({label.split(" ")[0]}): {np.mean(steady_queue):.2f}')
+
+        plot_smoothed_queue_history(ax, times_b, queue_b, 'r', 'Senza Priorità', baseline_warmup_duration, 'darkred')
+        plot_smoothed_queue_history(ax, self.metrics_prio.timestamps, self.metrics_prio.queue_lengths, 'b', 'Con Priorità', priority_warmup_duration, 'darkblue')
+        plot_smoothed_queue_history(ax, self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths, '#32CD32', 'WFQ', wfq_warmup_duration, 'darkgreen') # ADDED
 
         if use_log_scale:
             ax.set_yscale('log'); ylabel += ' (Scala Log)'; ax.set_ylim(bottom=0.1)
         ax.set_title('Confronto Evoluzione della Lunghezza della Coda'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel(ylabel)
         ax.grid(True, which='both', linestyle='--', alpha=0.6); ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, f"queue_history_comparison{'_log' if use_log_scale else ''}.png", fig)
 
 
@@ -788,7 +934,7 @@ class SteadyStatePlotter:
         Grafico della deviazione standard mobile del tempo di risposta per uno scenario.
         Usa la classe Welford per il calcolo della varianza.
         """
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
 
         steady_data = [(t, v) for t, v in all_responses if t >= warmup_duration]
 
@@ -815,7 +961,19 @@ class SteadyStatePlotter:
                         moving_std.append(0)
 
             if moving_std:
-                ax.plot(times[window_size-1:], moving_std, color=color, label='Dev. Std. Mobile', alpha=0.8)
+                plot_times = list(times[window_size-1:]) # I tempi corrispondenti alla moving_std
+                if len(plot_times) > 1:
+                    k_val = min(3, len(plot_times) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(plot_times), max(plot_times), 500)
+                        spl = make_interp_spline(plot_times, moving_std, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, color=color, label='Dev. Std. Mobile (Smoothed)', alpha=0.8)
+                    else:
+                        ax.plot(plot_times, moving_std, color=color, label='Dev. Std. Mobile', alpha=0.8)
+                else:
+                    ax.plot(plot_times, moving_std, color=color, label='Dev. Std. Mobile', alpha=0.8)
+
             ax.axvline(x=warmup_duration, color='k', linestyle=':', linewidth=2.5, label=f'Fine Warm-up ({warmup_duration}s)')
         else:
             ax.text(0.5, 0.5, f"Dati insufficienti (necessari > {window_size} dopo warmup)", ha='center', va='center', transform=ax.transAxes)
@@ -826,7 +984,7 @@ class SteadyStatePlotter:
         ax.set_ylim(bottom=0)
         ax.grid(True, which='both', linestyle='--', alpha=0.6)
         ax.legend()
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, filename, fig)
 
 
@@ -847,7 +1005,7 @@ class SteadyStatePlotter:
         self._plot_variance_trend(all_responses_wfq, "WFQ", output_dir, "variance_trend_wfq.png", '#32CD32', window_size, warmup_duration=wfq_warmup) # ADDED
 
         print("Generazione grafico di CONFRONTO andamento della varianza...")
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
 
         for responses, color, label, warmup_duration in [
             (all_responses_base, 'r', 'Senza Priorità', baseline_warmup),
@@ -878,7 +1036,19 @@ class SteadyStatePlotter:
                             moving_std.append(0)
 
                 if moving_std:
-                    ax.plot(times[window_size-1:], moving_std, color=color, label=label, alpha=0.8)
+                    plot_times = list(times[window_size-1:])
+                    if len(plot_times) > 1:
+                        k_val = min(3, len(plot_times) - 1)
+                        if k_val >= 1:
+                            x_smooth = np.linspace(min(plot_times), max(plot_times), 500)
+                            spl = make_interp_spline(plot_times, moving_std, k=k_val)
+                            y_smooth = spl(x_smooth)
+                            ax.plot(x_smooth, y_smooth, color=color, label=label, alpha=0.8)
+                        else:
+                            ax.plot(plot_times, moving_std, color=color, label=label, alpha=0.8)
+                    else:
+                        ax.plot(plot_times, moving_std, color=color, label=label, alpha=0.8)
+
 
         ax.axvline(x=baseline_warmup, color='k', linestyle=':', linewidth=2.5, label=f'Fine Warm-up ({baseline_warmup}s)')
         ax.set_title(f'Confronto Stabilizzazione Varianza (Finestra di {window_size})')
@@ -887,12 +1057,12 @@ class SteadyStatePlotter:
         ax.set_ylim(bottom=0)
         ax.grid(True, which='both', linestyle='--', alpha=0.6)
         ax.legend(title='Scenario')
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "variance_trend_comparison.png", fig)
 
 
     def _plot_batch_mean_queue_single(self, data, scenario_name, warmup_duration, num_batches_k, output_dir, color):
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
         if not data or not (steady_data := [(t, v) for t, v in data if t >= warmup_duration]):
             ax.text(0.5, 0.5, "Nessun dato disponibile/in steady-state", ha='center', va='center', transform=ax.transAxes)
         else:
@@ -910,7 +1080,18 @@ class SteadyStatePlotter:
                         batch_means_values.append(np.mean(values_in_batch))
                         batch_timestamps.append(batch_start_time + (batch_duration / 2))
 
-                if batch_timestamps: ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label="Media per Batch")
+                if batch_timestamps:
+                    if len(batch_timestamps) > 1:
+                        k_val = min(3, len(batch_timestamps) - 1)
+                        if k_val >= 1:
+                            x_smooth = np.linspace(min(batch_timestamps), max(batch_timestamps), 500)
+                            spl = make_interp_spline(batch_timestamps, batch_means_values, k=k_val)
+                            y_smooth = spl(x_smooth)
+                            ax.plot(x_smooth, y_smooth, marker='o', linestyle='-', color=color, label="Media per Batch (Smoothed)")
+                        else:
+                            ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label="Media per Batch")
+                    else:
+                        ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label="Media per Batch")
             else:
                 ax.text(0.5, 0.5, "Durata steady-state insufficiente o numero di batch non valido.", ha='center', va='center', transform=ax.transAxes)
 
@@ -918,7 +1099,7 @@ class SteadyStatePlotter:
         ax.set_title(f'Evoluzione Medie per Batch della Coda ({scenario_name})'); ax.set_xlabel('Tempo di Simulazione (s)'); ax.set_ylabel('Lunghezza Media della Coda per Batch')
         ax.legend(); ax.grid(True, which='both', linestyle='--', alpha=0.6)
         ax.set_xlim(left=0); ax.set_ylim(bottom=0)
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, f"queue_batch_means_trend_{scenario_name.lower().replace(' ', '_')}.png", fig)
 
     def plot_batch_mean_queue_trend_analysis(self, warmup: dict, batches: dict, output_dir):
@@ -967,7 +1148,7 @@ class SteadyStatePlotter:
 
         print("Generazione grafico CONFRONTO trend delle medie dei batch della coda...")
 
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained") # MODIFIED layout
         scenarios = {
             "Senza Priorità": (self.metrics.queue_length_history, baseline_warmup_duration, k_base_optimal, 'r'),
             "Con Priorità": (data_prio, priority_warmup_duration, k_prio_optimal, 'b'),
@@ -999,7 +1180,18 @@ class SteadyStatePlotter:
                     batch_timestamps.append(batch_start_time + batch_duration / 2)
 
             if batch_timestamps:
-                ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label=scenario_name)
+                if len(batch_timestamps) > 1:
+                    k_val = min(3, len(batch_timestamps) - 1)
+                    if k_val >= 1:
+                        x_smooth = np.linspace(min(batch_timestamps), max(batch_timestamps), 500)
+                        spl = make_interp_spline(batch_timestamps, batch_means_values, k=k_val)
+                        y_smooth = spl(x_smooth)
+                        ax.plot(x_smooth, y_smooth, marker='o', linestyle='-', color=color, label=scenario_name)
+                    else:
+                        ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label=scenario_name)
+                else:
+                    ax.plot(batch_timestamps, batch_means_values, marker='o', linestyle='-', color=color, label=scenario_name)
+
 
         ax.set_title('Confronto Evoluzione delle Medie per Batch della Coda')
         ax.set_xlabel('Tempo di Simulazione (s)')
@@ -1009,7 +1201,7 @@ class SteadyStatePlotter:
         ax.set_xlim(left=0)
         ax.set_ylim(bottom=0)
 
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, "queue_batch_means_trend_comparison.png", fig)
 
 
@@ -1022,7 +1214,7 @@ class SteadyStatePlotter:
         """
         is_prio_or_wfq = isinstance(metrics, MetricsWithPriority) # Generalize check
 
-        fig, ax = plt.subplots(figsize=(16, 9))
+        fig, ax = plt.subplots(figsize=(16, 9), layout="constrained") # MODIFIED layout
 
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
         category_names = [req.name.replace('_', ' ').title() for req in all_req_types]
@@ -1047,6 +1239,8 @@ class SteadyStatePlotter:
             if not timestamps:
                 continue
 
+            # Ensure calculate_throughput_ci is called with enough data, as it uses batch means
+            # This logic should be within analyzer.calculate_throughput_ci for consistency
             results = analyzer.calculate_throughput_ci(timestamps, warmup_value, confidence_level=self.config.CONFIDENCE_LEVEL, threshold=self.config.BATCH_THRESHOLD)
             if results:
                 plot_data.append({
@@ -1059,7 +1253,7 @@ class SteadyStatePlotter:
             ax.text(0.5, 0.5, "Nessun dato disponibile per il plotting.", ha='center', va='center', transform=ax.transAxes, fontsize=12)
             ax.set_title(f"Richieste Servite con Successo per Tipo ({scenario_name}) (Nessun Dato)", fontsize=18)
             plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-            plt.tight_layout()
+            # plt.tight_layout() # RIMOSSO
             self._save_plot(output_dir, f"throughput_{scenario_name.lower().replace(' ', '_')}.png", fig)
             return
 
@@ -1082,7 +1276,7 @@ class SteadyStatePlotter:
         ax.grid(True, axis='y', linestyle='--', alpha=0.5)
         ax.set_ylim(top=ax.get_ylim()[1] * 1.1)
 
-        plt.tight_layout()
+        # plt.tight_layout() # RIMOSSO
         self._save_plot(output_dir, f"throughput_{scenario_name.lower().replace(' ', '_')}.png", fig)
 
 
@@ -1095,7 +1289,7 @@ class SteadyStatePlotter:
 
         print("Generazione grafico di CONFRONTO delle richieste soddisfatte (throughput)...")
 
-        fig, ax = plt.subplots(figsize=(16, 9))
+        fig, ax = plt.subplots(figsize=(16, 9), layout="constrained") # MODIFIED layout
         fig.suptitle("Confronto Richieste Servite per Tipo - Steady State", fontsize=24, fontweight='bold')
 
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
@@ -1141,7 +1335,7 @@ class SteadyStatePlotter:
             ax.text(0.5, 0.5, "Nessun dato disponibile per il confronto di throughput.", ha='center', va='center', transform=ax.transAxes, fontsize=12)
             ax.set_title("Confronto Richieste Servite per Tipo (Nessun Dato)", fontsize=18)
             plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
-            plt.tight_layout()
+            # plt.tight_layout() # RIMOSSO
             self._save_plot(output_dir, "throughput_comparison.png", fig)
             return
 
@@ -1203,7 +1397,7 @@ class SteadyStatePlotter:
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
         ax.legend(title='Scenario', loc='upper left')
         ax.set_ylim(top=y_annotation_pos * 1.2) # Adjusted ylim to accommodate annotations better
-        plt.tight_layout(rect=(0, 0, 1, 0.95))
+        # plt.tight_layout(rect=(0, 0, 1, 0.95)) # RIMOSSO
 
         self._save_plot(output_dir, "throughput_comparison.png", fig)
 
@@ -1213,40 +1407,56 @@ class SteadyStatePlotter:
         all_req_types = sorted(list(self.metrics.requests_generated_data.keys()), key=lambda x: x.name)
         ncols, i = 3, -1
         nrows = int(np.ceil(len(all_req_types) / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), sharex=True, sharey=True)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 5), sharex=True, sharey=True, layout="constrained") # MODIFIED layout
         axes = axes.flatten()
 
         baseline_warmup_duration = warmup_durations["baseline"]
         priority_warmup_duration = warmup_durations["priority"]
         wfq_warmup_duration = warmup_durations["wfq"] # ADDED
 
+        # Helper to plot with spline
+        def plot_smoothed_line(ax, times, values, color, linestyle, label):
+            if values and len(times) > 1:
+                cumulative_means = np.cumsum(values) / np.arange(1, len(values) + 1)
+                k_val = min(3, len(times) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(times), max(times), 500)
+                    spl = make_interp_spline(times, cumulative_means, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, linestyle=linestyle, label=label)
+                else:
+                    ax.plot(times, cumulative_means, color=color, linestyle=linestyle, label=label)
+            elif values:
+                ax.plot(times, np.cumsum(values) / np.arange(1, len(values) + 1), color=color, linestyle=linestyle, label=label)
+
+
         for i, req_type in enumerate(all_req_types):
             ax = axes[i]
             # Baseline
             if resp_b := sorted(self.metrics.response_times_history.get(req_type, []), key=lambda x: x[0]):
                 times, values = zip(*resp_b)
-                ax.plot(times, np.cumsum(values) / np.arange(1, len(values)+1), color='salmon', linestyle='--', label='Risposta (Baseline)')
+                plot_smoothed_line(ax, times, values, 'salmon', '--', 'Risposta (Baseline)')
             if wait_b := sorted(self.metrics.wait_times_history.get(req_type, []), key=lambda x: x[0]):
                 times, values = zip(*wait_b)
-                ax.plot(times, np.cumsum(values) / np.arange(1, len(values)+1), color='red', label='Attesa (Baseline)')
+                plot_smoothed_line(ax, times, values, 'red', '-', 'Attesa (Baseline)')
 
             # Priority
             times_p = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
             if (values_rp := self.metrics_prio.response_times_by_req_type.get(req_type, [])) and len(times_p) == len(values_rp):
                 times_s, values_s = zip(*sorted(zip(times_p, values_rp), key=lambda x: x[0]))
-                ax.plot(times_s, np.cumsum(values_s) / np.arange(1, len(values_s)+1), color='lightblue', linestyle='--', label='Risposta (Priorità)')
+                plot_smoothed_line(ax, times_s, values_s, 'lightblue', '--', 'Risposta (Priorità)')
             if (values_wp := self.metrics_prio.wait_times_by_req_type.get(req_type, [])) and len(times_p) == len(values_wp):
                 times_s, values_s = zip(*sorted(zip(times_p, values_wp), key=lambda x: x[0]))
-                ax.plot(times_s, np.cumsum(values_s) / np.arange(1, len(values_s)+1), color='blue', label='Attesa (Priorità)')
+                plot_smoothed_line(ax, times_s, values_s, 'blue', '-', 'Attesa (Priorità)')
 
             # WFQ # ADDED
             times_wfq = self.metrics_wfq.completion_timestamps_by_req_type.get(req_type, [])
             if (values_rwfq := self.metrics_wfq.response_times_by_req_type.get(req_type, [])) and len(times_wfq) == len(values_rwfq):
                 times_s, values_s = zip(*sorted(zip(times_wfq, values_rwfq), key=lambda x: x[0]))
-                ax.plot(times_s, np.cumsum(values_s) / np.arange(1, len(values_s)+1), color='#90EE90', linestyle=':', label='Risposta (WFQ)') # LightGreen
+                plot_smoothed_line(ax, times_s, values_s, '#90EE90', ':', 'Risposta (WFQ)') # LightGreen
             if (values_wwfq := self.metrics_wfq.wait_times_by_req_type.get(req_type, [])) and len(times_wfq) == len(values_wwfq):
                 times_s, values_s = zip(*sorted(zip(times_wfq, values_wwfq), key=lambda x: x[0]))
-                ax.plot(times_s, np.cumsum(values_s) / np.arange(1, len(values_s)+1), color='#32CD32', label='Attesa (WFQ)') # LimeGreen
+                plot_smoothed_line(ax, times_s, values_s, '#32CD32', '-', 'Attesa (WFQ)') # LimeGreen
 
             # Add vertical line for warmup duration
             ax.axvline(x=baseline_warmup_duration, color='gray', linestyle=':', linewidth=1.5, label=f'Warm-up End ({baseline_warmup_duration}s)')
@@ -1257,5 +1467,5 @@ class SteadyStatePlotter:
             for j in range(i + 1, len(axes)): axes[j].set_visible(False)
         fig.supxlabel('Tempo di Simulazione (s)', y=0.02)
         fig.supylabel('Tempo Medio Cumulativo (s)', x=0.02)
-        plt.tight_layout(rect=(0.03, 0.03, 1, 0.95))
+        # plt.tight_layout(rect=(0.03, 0.03, 1, 0.95)) # RIMOSSO
         self._save_plot(output_dir, "times_grid_comparison.png", fig)

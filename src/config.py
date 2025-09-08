@@ -11,19 +11,16 @@ SIMULATION_TIME = 500     # Durata delle simulazioni a orizzonte finito (s)
 LEHMER_SEED = 123456789     # Seed per la riproducibilità
 
 # --- ANALISI A ORIZZONTE INFINITO ---
-STEADY_SIMULATION_TIME = 3600 #30000  # Durata della simulazione lunga per l'analisi steady-state
-WARM_UP_TO_STEADY = 2500        # Periodo di transitorio da scartare, determinato dall'analisi di convergenza
+STEADY_SIMULATION_TIME = 3600#30000  # Durata della simulazione lunga per l'analisi steady-state
 BATCH_K = 64        # numero di batch
 BATCH_THRESHOLD = 0.2  # soglia autocorrelazione
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = False # Flag per attivare l'esecuzione della simulazione lunga
+STEADY_ENABLED = True # Flag per attivare l'esecuzione della simulazione lunga
 REL_PRECISION=0.05
 WARMUP_METHOD = "WELCH"  # Metodo di warm-up automatico: "WELCH" o "MSER5"
 ABS_PRECISION = None
 SIMULATION_MODE = SimulationMode.STEADY_STATE
-# Numero di batch per il plotting delle tendenze (solo visualizzazione, non determinazione statistica)
-# Minimo richiesto è 40.
-NUM_BATCHES_FOR_TRENDS = 40
+
 # ==============================================================================
 # MODELLO DEL SISTEMA (Cluster Kubernetes)
 # ==============================================================================

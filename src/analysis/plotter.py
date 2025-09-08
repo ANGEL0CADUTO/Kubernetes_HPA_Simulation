@@ -12,8 +12,7 @@ from matplotlib.ticker import MaxNLocator
 # Import the Welford class from the welford.py file
 from welford import Welford
 
-matplotlib.use('Qt5Agg')
-plt.style.use('ggplot')
+
 
 # Funzione helper per calcolare le medie, AGGIORNATA PER USARE WELFORD
 def _calculate_overall_avg(times_by_type: dict):
@@ -23,6 +22,13 @@ def _calculate_overall_avg(times_by_type: dict):
     # Utilizzo di Welford per calcolare la media
     welford_aggregator = Welford(np.array(all_times))
     return welford_aggregator.mean if welford_aggregator.count > 0 else 0
+
+
+def _safe_legend(ax, loc='best', **kwargs):
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(handles, labels, loc=loc, **kwargs)
+
 
 class Plotter:
     def __init__(self, metrics, metrics_prio, config_module):
@@ -55,7 +61,7 @@ class Plotter:
             ax.plot(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths, color='b', linewidth=2, label='Con Priorità', alpha=0.8)
             ax.axhline(mean_prio, color='darkblue', linestyle='--', linewidth=1, label=f'Media Con Priorità: {mean_prio:.2f}')
         ax.set_title("Evoluzione della Lunghezza della Coda nel Tempo"); ax.set_xlabel("Tempo di Simulazione (s)"); ax.set_ylabel("Numero di Richieste in Coda")
-        ax.legend(loc='best'); ax.grid(True, linestyle='--', alpha=0.6)
+        _safe_legend(ax); ax.grid(True, linestyle='--', alpha=0.6)
         fig.tight_layout()
         self._save_plot(output_dir, filename, fig)
 
@@ -95,7 +101,7 @@ class Plotter:
         ax.set_xlabel("Tempo di Simulazione (s)")
         ax.set_ylabel("Tempo di Attesa Medio (s)")
         ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='best')
+        _safe_legend(ax)
         fig.tight_layout()
         self._save_plot(output_dir, filename, fig)
 
@@ -124,7 +130,7 @@ class Plotter:
         ax.set_xlabel("Tempo di Simulazione (s)")
         ax.set_ylabel("Tempo di Risposta Medio (s)")
         ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='best')
+        _safe_legend(ax)
         fig.tight_layout()
         self._save_plot(output_dir, filename, fig)
         # --- METODI DI PLOTTING AGGIORNATI CON PARAMETRI DI OUTPUT ---
@@ -209,7 +215,7 @@ class Plotter:
         if self.metrics_prio.pod_counts:
             ax.plot(self.metrics_prio.timestamps, self.metrics_prio.pod_counts, color='b', linewidth=2.5, label='Con Priorità', alpha=0.8)
         ax.set_xlabel('Tempo di simulazione (s)'); ax.set_ylabel('Numero di Pod'); ax.set_title('Evoluzione del Numero di Pod nel Tempo')
-        ax.legend(loc='best'); ax.grid(True, linestyle='--', alpha=0.6)
+        _safe_legend(ax); ax.grid(True, linestyle='--', alpha=0.6)
         ax.yaxis.set_major_locator(MaxNLocator(integer=True)); ax.set_ylim(bottom=0)
         fig.tight_layout()
         self._save_plot(output_dir, filename, fig)
@@ -381,13 +387,13 @@ class Plotter:
             ax1.set_title('Modello Baseline (FIFO)')
             ax1.set_ylabel('Tempo di Risposta Medio (s)')
             ax1.grid(True, linestyle='--', alpha=0.6)
-            ax1.legend()
+            _safe_legend(ax1)
 
             ax2.set_title('Modello Migliorato (Priorità)')
             ax2.set_xlabel('Tempo di Simulazione (s)')
             ax2.set_ylabel('Tempo di Risposta Medio (s)')
             ax2.grid(True, linestyle='--', alpha=0.6)
-            ax2.legend()
+            _safe_legend(ax2)
 
             # 5. Salviamo il file con un nome specifico per lo scenario
             output_filename = f'replication_traces_{scenario_name}.png'

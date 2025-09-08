@@ -1,4 +1,4 @@
-# File: main.py (VERSİONE CORRETTA E AGGIORNATA)
+
 import os
 
 from analysis.plotter import Plotter
@@ -10,8 +10,8 @@ from src.simulation.simulator_with_priority import SimulatorWithPriority
 from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
 from src.steady_state_analysis.steady_state_plotter import SteadyStatePlotter
 from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per chiarezza
-from src.utils.metrics import Metrics
-from src.utils.metrics_with_priority import MetricsWithPriority
+from src.utils.metrics import Metrics # Importa la classe Metrics
+from src.utils.metrics_with_priority import MetricsWithPriority # Importa la classe MetricsWithPriority
 from src.utils.acs import batch_means, compute_batch_size
 
 
@@ -47,22 +47,24 @@ def main():
 
             # --- ESECUZIONE BASELINE ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO BASELINE (FIFO) ---")
-            metrics_base = Metrics(config_module=config)
+            # NON creare qui l'istanza delle metriche. Passa la CLASSE Metrics.
             simulator_base = Simulator(
-                config_module=config, metrics=metrics_base,
+                config, Metrics, # <-- MODIFICA QUI: passa la CLASSE Metrics
                 arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
                 service_rng=replication_streams['service'], lambda_function=lambda_fn
             )
             simulator_base.run(simulation_duration=config.SIMULATION_TIME)
+            metrics_base = simulator_base.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
 
             # --- ESECUZIONE MIGLIORATA ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
-            metrics_prio = MetricsWithPriority(config)
-            simulator_prio = SimulatorWithPriority(config=config,
-                                                   metrics=metrics_prio,
+            # NON creare qui l'istanza delle metriche. Passa la CLASSE MetricsWithPriority.
+            simulator_prio = SimulatorWithPriority(config,
+                                                   MetricsWithPriority, # <-- MODIFICA QUI: passa la CLASSE MetricsWithPriority
                                                    arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
                                                    service_rng=replication_streams['service'], lambda_function=lambda_fn)
             simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
+            metrics_prio = simulator_prio.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
 
             # Salva i risultati di questa replica/scenario
             all_results[scenario_name][i] = {
@@ -137,37 +139,39 @@ def run_steady_state_experiment(rng_manager: RNGManager):
 
 
     print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
-    metrics_baseline = Metrics(config_module=config)
-    simulator_baseline = Simulator(
-        config_module=config, metrics=metrics_baseline,
-        arrival_rng=steady_streams_dict['arrivals'],
-        choice_rng=steady_streams_dict['choice'],
-        service_rng=steady_streams_dict['service'],
-        lambda_function=steady_lambda_fn
-    )
+    # NON creare qui l'istanza delle metriche. Passa la CLASSE Metrics.
+    simulator_baseline = Simulator(config, Metrics, # <-- MODIFICA QUI: passa la CLASSE Metrics
+                                   arrival_rng=steady_streams_dict['arrivals'],
+                                   choice_rng=steady_streams_dict['choice'],
+                                   service_rng=steady_streams_dict['service'],
+                                   lambda_function=steady_lambda_fn
+                                   )
     simulator_baseline.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    metrics_baseline = simulator_baseline.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
 
     print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
-    metrics_prio = MetricsWithPriority(config)
+    # NON creare qui l'istanza delle metriche. Passa la CLASSE MetricsWithPriority.
     simulator_prio = SimulatorWithPriority(
-        config= config,
-        metrics=metrics_prio,
+        config, MetricsWithPriority, # <-- MODIFICA QUI: passa la CLASSE MetricsWithPriority
         arrival_rng=steady_streams_dict['arrivals'],
         choice_rng=steady_streams_dict['choice'],
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
-    metrics_wfq=MetricsWithPriority(config)
+    metrics_prio = simulator_prio.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
+
+    # Anche per WFQ, passa la CLASSE MetricsWithPriority e recupera l'istanza
+    # assumendo che SimulatorWFQ abbia una struttura simile.
     simulator_wfq=SimulatorWFQ(
-        config=config,
-        metrics=metrics_wfq,
+        config, MetricsWithPriority, # <-- MODIFICA QUI: passa la CLASSE MetricsWithPriority
         arrival_rng=steady_streams_dict['arrivals'],
         choice_rng=steady_streams_dict['choice'],
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
     simulator_wfq.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    metrics_wfq = simulator_wfq.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
 
     # --- CALCOLO WARM-UP E BATCH MEANS ---
     print("\n--- Calcolo Warm-up e Batch Means per i Tempi di Risposta Complessivi ---")
