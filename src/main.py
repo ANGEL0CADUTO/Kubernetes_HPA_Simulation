@@ -3,6 +3,7 @@ import os
 
 from analysis.plotter import Plotter
 from src import config
+from src.analysis.new_plotter import newPlotter
 from src.analysis.plotter_transient import plot_transient_comparison
 from src.simulation.simulator import Simulator
 from src.simulation.simulator_wfq import SimulatorWFQ
@@ -13,6 +14,7 @@ from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per 
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
 from src.utils.acs import batch_means, compute_batch_size
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -59,46 +61,47 @@ def main():
             )
             simulator_base.run(simulation_duration=config.SIMULATION_TIME)
 
-            # --- ESECUZIONE MIGLIORATA ---
-            print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
-            metrics_prio= MetricsWithPriority(config)
-            simulator_prio = SimulatorWithPriority(config=config,
-                                               metrics=metrics_prio,
-                                               arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
-                                               service_rng=replication_streams['service'], lambda_function=lambda_fn)
-            simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
-            print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (WFQ) ---")
-            metrics_wfq=MetricsWithPriority(config)
-            simulator_wfq=SimulatorWFQ(config=config,
-                                        metrics=metrics_wfq,
-                                        arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
-                                        service_rng=replication_streams['service'], lambda_function=lambda_fn)
-            simulator_wfq.run(simulation_duration=config.SIMULATION_TIME)
-
-
-            all_results[scenario_name][i] = {
-                'baseline': metrics_base,
-                'priority': metrics_prio,
-                'wfq': metrics_wfq,
-                'seed': rep_seed # Il seed salvato sarà lo stesso per tutti gli scenari di questa replica
-            }
-            # --- Generazione report dettagliati per QUESTA specifica replica ---
-            print(f"\n--- Generazione report per {scenario_name}, Replica {i+1} ---")
-            output_folder = f"output/plots_{scenario_name}/replica_{i+1}"
-
-            single_run_plotter = Plotter(metrics_base, metrics_prio, config)
-            single_run_plotter.generate_comprehensive_report(
-                output_dir=output_folder,
-                run_prefix=f"{scenario_name}_repl{i+1}"
-            )
-
-            #>>> Aggiunta della chiamata per il grafico delle tante run
-            plot_transient_comparison(
-                metrics_base, metrics_prio,metrics_wfq,
-                scenario_name=scenario_name,
-                replica_idx=i,
-                output_dir=output_folder
-            )
+            #
+            # # --- ESECUZIONE MIGLIORATA ---
+            # print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
+            # metrics_prio= MetricsWithPriority(config)
+            # simulator_prio = SimulatorWithPriority(config=config,
+            #                                    metrics=metrics_prio,
+            #                                    arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+            #                                    service_rng=replication_streams['service'], lambda_function=lambda_fn)
+            # simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
+            # print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (WFQ) ---")
+            # metrics_wfq=MetricsWithPriority(config)
+            # simulator_wfq=SimulatorWFQ(config=config,
+            #                             metrics=metrics_wfq,
+            #                             arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
+            #                             service_rng=replication_streams['service'], lambda_function=lambda_fn)
+            # simulator_wfq.run(simulation_duration=config.SIMULATION_TIME)
+            #
+            #
+            # all_results[scenario_name][i] = {
+            #     'baseline': metrics_base,
+            #     'priority': metrics_prio,
+            #     'wfq': metrics_wfq,
+            #     'seed': rep_seed # Il seed salvato sarà lo stesso per tutti gli scenari di questa replica
+            # }
+            # # --- Generazione report dettagliati per QUESTA specifica replica ---
+            # print(f"\n--- Generazione report per {scenario_name}, Replica {i+1} ---")
+            # output_folder = f"output/plots_{scenario_name}/replica_{i+1}"
+            #
+            # single_run_plotter = Plotter(metrics_base, metrics_prio, config)
+            # single_run_plotter.generate_comprehensive_report(
+            #     output_dir=output_folder,
+            #     run_prefix=f"{scenario_name}_repl{i+1}"
+            # )
+            #
+            # #>>> Aggiunta della chiamata per il grafico delle tante run
+            # plot_transient_comparison(
+            #     metrics_base, metrics_prio,metrics_wfq,
+            #     scenario_name=scenario_name,
+            #     replica_idx=i,
+            #     output_dir=output_folder
+            # )
 
 
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE E SCENARI {'='*30}")
@@ -223,6 +226,11 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         half_width_wfq = batch_means_results_wfq['half_width']
     print(f"WFQ (Overall Response Time): b={b_prio}, k={k_prio_optimal}, rho1={rho_prio:.3f}, media={mean_wfq:.4f}, IC95={ci95_wfq}")
 
+    # 1. IMPOSTA LO STILE
+    plt.style.use('./style/plot_style.mplstyle')
+    print("Stile 'plot_style.mplstyle' caricato per steady state.")
+
+
     print("\n--- Generazione Report Steady-State ---")
     steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio,metrics_wfq, config)
 
@@ -307,19 +315,25 @@ if __name__ == "__main__":
     if all_results:
         # Inizializziamo un Plotter. I dati passati all'init sono irrilevanti
         # per il metodo di plotting aggregato, che riceve tutto ciò di cui ha bisogno.
-        final_plotter = Plotter(None, None, config)
+        final_plotter = newPlotter(None, None, config)
+
+        # 1. IMPOSTA LO STILE UNA VOLTA PER TUTTE
+        plt.style.use('./style/plot_style.mplstyle')
+        print("Stile 'mio_stile.mplstyle' caricato globalmente.")
 
         # Chiamiamo il metodo corretto per generare i grafici delle tracce
-        final_plotter.plot_replication_traces_per_scenario(all_results, num_replications)
+        final_plotter.plot_replication_traces_per_scenario(all_results)
         # AGGIUNGI QUESTA CHIAMATA
         print_final_debug_summary(all_results)
 
     # 3. Esegui l'analisi steady-state se è abilitata nel config
     #    (Questa parte è separata e non è stata toccata)
-    if config.STEADY_ENABLED:
-        rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
-        run_steady_state_experiment(rng_manager_for_steady_state)
-    else:
-        print("\n--- Analisi Steady-State disabilitata in config.py ---")
+
+    #COMMENTATO PER GRAFICI
+    # if config.STEADY_ENABLED:
+    #     rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
+    #     run_steady_state_experiment(rng_manager_for_steady_state)
+    # else:
+    #     print("\n--- Analisi Steady-State disabilitata in config.py ---")
 
     print("\n--- Processo di Simulazione e Analisi Completato ---")
