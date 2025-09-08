@@ -11,12 +11,12 @@ SIMULATION_TIME = 500     # Durata delle simulazioni a orizzonte finito (s)
 LEHMER_SEED = 123456789     # Seed per la riproducibilità
 
 # --- ANALISI A ORIZZONTE INFINITO ---
-STEADY_SIMULATION_TIME = 600 #30000  # Durata della simulazione lunga per l'analisi steady-state
+STEADY_SIMULATION_TIME = 3600 #30000  # Durata della simulazione lunga per l'analisi steady-state
 WARM_UP_TO_STEADY = 2500        # Periodo di transitorio da scartare, determinato dall'analisi di convergenza
 BATCH_K = 64        # numero di batch
 BATCH_THRESHOLD = 0.2  # soglia autocorrelazione
 CONFIDENCE_LEVEL = 0.95
-STEADY_ENABLED = True  # Flag per attivare l'esecuzione della simulazione lunga
+STEADY_ENABLED = False # Flag per attivare l'esecuzione della simulazione lunga
 REL_PRECISION=0.05
 WARMUP_METHOD = "WELCH"  # Metodo di warm-up automatico: "WELCH" o "MSER5"
 ABS_PRECISION = None
@@ -30,9 +30,9 @@ NUM_BATCHES_FOR_TRENDS = 40
 # Giustificazione: Modella un cluster di medie dimensioni con alta disponibilità,
 # distribuito su 3 Availability Zones (AZ), una pratica standard su cloud come AWS.
 NUM_WORKERS = 3
-INITIAL_PODS = 3            # Un Pod per worker all'avvio
-MIN_PODS = 2                # Minimo per garantire l'alta disponibilità
-MAX_PODS = 24               # Limite di budget/risorse (es. 8 pod max per worker)
+INITIAL_PODS_PER_WORKER = 1 # NUOVO: Numero di Pod con cui ogni Worker Node parte.
+MIN_PODS = 3           # Minimo GLOBALE per l'intero cluster.
+MAX_PODS = 24               # Limite di budget/risorse GLOBALE per l'intero cluster.
 
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
 # Giustificazione: Parametri standard di Kubernetes (API v2) per un HPA reattivo.
