@@ -1,0 +1,67 @@
+# Stile Matplotlib per Pubblicazioni e Report di Simulazione
+
+### FIGURE ###
+# Dimensioni di default della figura in pollici (larghezza, altezza)
+figure.figsize   : 10, 6
+# Titolo principale della figura
+figure.titlesize : 18
+figure.titleweight : bold
+# Usa un layout che previene la sovrapposizione di etichette
+figure.autolayout : True
+
+
+### AXES (L'area del grafico) ###
+# Colore del bordo degli assi
+axes.edgecolor : .15 # Un grigio scuro, meno netto del nero
+# Dimensione font del titolo degli assi (es. "Tempo medio in coda 1")
+axes.titlesize : 14
+axes.titleweight : bold
+# Dimensione font delle etichette (es. "Tempo di simulazione (minuti)")
+axes.labelsize : 12
+# Abilita la griglia di default
+axes.grid : True
+axes.grid.axis : both
+
+
+### GRIGLIA ###
+grid.color : #cccccc # Un grigio chiaro che non distrae
+grid.linestyle : --   # Stile tratteggiato, molto elegante
+grid.linewidth : 0.8  # Linee sottili
+
+
+### LINEE ###
+# Spessore di default delle linee
+lines.linewidth : 2.0
+# Dimensione di default dei marcatori (per scatter plot o plot con punti)
+lines.markersize : 6
+# Colori di default per le linee. Usa il ciclo di colori 'Tableau 10',
+# molto apprezzato per la leggibilità e l'estetica.
+axes.prop_cycle : cycler('color', ['1f77b4', 'ff7f0e', '2ca02c', 'd62728', '9467bd', '8c564b', 'e377c2', '7f7f7f', 'bcbd22', '17becf'])
+
+
+### TICKS (Le tacche e i numeri sugli assi) ###
+# Dimensione del font dei numeri sugli assi
+xtick.labelsize : 10
+ytick.labelsize : 10
+# Mette le tacche all'interno del grafico
+xtick.direction : in
+ytick.direction : in
+
+
+### LEGENDA ###
+legend.fontsize : 11
+# Aggiunge una leggera cornice trasparente, molto professionale
+legend.frameon : True
+legend.framealpha : 0.8
+# Rimuove l'ombra, che può sembrare datata
+legend.shadow : False
+
+
+### SALVATAGGIO FIGURE ###
+# Imposta una risoluzione alta (qualità da pubblicazione)
+savefig.dpi : 300
+# Sfondo di default non trasparente
+savefig.transparent : False
+# Bordo bianco attorno all'immagine salvata
+savefig.edgecolor : white
+savefig.facecolor : white

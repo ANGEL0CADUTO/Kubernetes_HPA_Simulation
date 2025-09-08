@@ -10,7 +10,7 @@ from src.utils.metrics_with_priority import MetricsWithPriority
 from matplotlib.ticker import MaxNLocator
 
 # Import the Welford class from the welford.py file
-from welford import Welford
+from src.utils.welford import Welford
 
 
 

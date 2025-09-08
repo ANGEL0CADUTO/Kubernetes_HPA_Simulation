@@ -34,6 +34,7 @@ class Simulator:
     def request_generator(self):
         req_id_counter = 0
         while True:
+            #arrivi seguono processo di Poisson con tasso lambda in funzione del tempo
             current_arrival_rate = self.lambda_function(self.env.now)
             if current_arrival_rate <= 0: yield self.env.timeout(1); continue
             time_to_next = self.arrival_rng.exponential(1.0 / current_arrival_rate)

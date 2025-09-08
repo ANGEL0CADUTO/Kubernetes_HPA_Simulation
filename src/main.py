@@ -3,7 +3,8 @@ import os
 
 from analysis.plotter import Plotter
 from src import config
-
+from src.analysis.new_plotter import newPlotter
+from src.analysis.plotter_transient import plot_transient_comparison
 from src.simulation.simulator import Simulator
 from src.simulation.simulator_wfq import SimulatorWFQ
 from src.simulation.simulator_with_priority import SimulatorWithPriority
@@ -13,6 +14,7 @@ from src.utils.lehmer_rng import LehmerRNG as RNGManager  # Usiamo un alias per 
 from src.utils.metrics import Metrics # Importa la classe Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority # Importa la classe MetricsWithPriority
 from src.utils.acs import batch_means, compute_batch_size
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -21,9 +23,8 @@ def main():
     """
     print("--- Inizio Progetto di Simulazione E-commerce (Versione con Rigore Metodologico) ---")
 
-    NUM_REPLICATIONS = 2 # Definisci qui il numero di repliche
+    NUM_REPLICATIONS = 2
 
-    # Definisci i tuoi scenari di arrivo
     arrival_scenarios = {
         "tasso_70": lambda t: 85,
         "tasso_85": lambda t: 170,
@@ -37,6 +38,7 @@ def main():
     for i in range(NUM_REPLICATIONS):
         print(f"\n{'='*30} INIZIO REPLICA {i + 1}/{NUM_REPLICATIONS} {'='*30}")
 
+        # LA CHIAMATA ORA E' QUI: nel ciclo esterno, prima del ciclo interno.
         # Generiamo UN SOLO set di stream e UN SOLO seed per l'INTERA replica.
         replication_streams, rep_seed = rng_manager.get_replication_streams()
         print(f"--- Replica {i+1} utilizzerà il SEED master per tutti gli scenari: {rep_seed} ---")
@@ -44,6 +46,10 @@ def main():
         # --- CICLO INTERNO: SCENARI ---
         for scenario_name, lambda_fn in arrival_scenarios.items():
             print(f"\n--- ESECUZIONE SCENARIO: {scenario_name.upper()} ---")
+
+            # NON generiamo più un nuovo stream qui, ma usiamo quello definito sopra.
+            # Questo garantisce che 'replication_streams' sia identico per
+            # 'tasso_70' e 'tasso_85' all'interno della stessa replica 'i'.
 
             # --- ESECUZIONE BASELINE ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO BASELINE (FIFO) ---")
@@ -271,6 +277,11 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     print(f"WFQ (Overall Response Time): b={b_wfq}, k={k_wfq_optimal}, rho1={rho_wfq:.3f}, media={mean_wfq:.4f}, IC95={ci95_wfq}")
 
 
+    # 1. IMPOSTA LO STILE
+    plt.style.use('./style/plot_style.mplstyle')
+    print("Stile 'plot_style.mplstyle' caricato per steady state.")
+
+
     print("\n--- Generazione Report Steady-State ---")
     steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, metrics_wfq,config) # Passa metrics_wfq qui
 
@@ -357,19 +368,25 @@ if __name__ == "__main__":
     if all_results:
         # Inizializziamo un Plotter. I dati passati all'init sono irrilevanti
         # per il metodo di plotting aggregato, che riceve tutto ciò di cui ha bisogno.
-        final_plotter = Plotter(None, None, config)
+        final_plotter = newPlotter(None, None, config)
+
+        # 1. IMPOSTA LO STILE UNA VOLTA PER TUTTE
+        plt.style.use('./style/plot_style.mplstyle')
+        print("Stile 'mio_stile.mplstyle' caricato globalmente.")
 
         # Chiamiamo il metodo corretto per generare i grafici delle tracce
-        final_plotter.plot_replication_traces_per_scenario(all_results, num_replications)
+        final_plotter.plot_replication_traces_per_scenario(all_results)
         # AGGIUNGI QUESTA CHIAMATA
         print_final_debug_summary(all_results)
 
     # 3. Esegui l'analisi steady-state se è abilitata nel config
     #    (Questa parte è separata e non è stata toccata)
-    if config.STEADY_ENABLED:
-        rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
-        run_steady_state_experiment(rng_manager_for_steady_state)
-    else:
-        print("\n--- Analisi Steady-State disabilitata in config.py ---")
+
+    #COMMENTATO PER GRAFICI
+    # if config.STEADY_ENABLED:
+    #     rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
+    #     run_steady_state_experiment(rng_manager_for_steady_state)
+    # else:
+    #     print("\n--- Analisi Steady-State disabilitata in config.py ---")
 
     print("\n--- Processo di Simulazione e Analisi Completato ---")

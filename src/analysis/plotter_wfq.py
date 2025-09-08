@@ -249,3 +249,114 @@ class PlotterWFQ:
 
         fig2.tight_layout()
         self._save_plot(output_dir, f"{run_prefix}_6_hotspot_QoS_HIGH.png", fig2)
+
+
+    ## GRAFICO NUOVO: CODE WORKER + SOVRIMPRESSIONE POD ###
+    def plot_worker_queue_evolution(
+            self,
+            all_results: dict,
+            scenario_name: str,
+            replica_idx: int,
+            output_dir: str = 'output/worker_analysis',
+            overlay_pods: bool = True
+    ):
+        """
+        Crea un grafico che mostra l'evoluzione temporale della lunghezza della coda
+        per ogni Worker Node, evidenziando la formazione di hotspot.
+        Opzionalmente, sovrappone l'andamento del numero di pod per ogni worker.
+
+        Args:
+            all_results (dict): Il dizionario completo con i risultati di tutte le simulazioni.
+            scenario_name (str): Il nome dello scenario da plottare (es. "tasso_85").
+            replica_idx (int): L'indice della replica da analizzare.
+            output_dir (str): La cartella dove salvare il grafico.
+            overlay_pods (bool): Se True, aggiunge un secondo asse Y e mostra l'evoluzione
+                                 del numero di pod per ogni worker.
+        """
+        print(f"Generazione grafico evoluzione code worker per '{scenario_name}', replica {replica_idx}...")
+
+        # --- 1. Estrazione Dati ---
+        # Prendiamo i dati della simulazione Baseline, ma potrebbe essere parametrizzato
+        try:
+            replica_data = all_results[scenario_name][replica_idx]
+            metrics_per_worker_base = replica_data['baseline'].metrics_per_worker
+            seed = replica_data.get('seed', f'Replica {replica_idx+1}')
+            num_workers = len(metrics_per_worker_base)
+        except (KeyError, IndexError):
+            print(f"Errore: Dati non trovati per scenario '{scenario_name}', replica {replica_idx}.")
+            return
+
+        # --- 2. Preparazione Figura e Assi ---
+        fig, ax1 = plt.subplots(figsize=(16, 8))
+        fig.suptitle(f'Evoluzione Code Worker (FIFO) - Scenario: {scenario_name.upper()} - Seed: {seed}',
+                     fontsize=18, fontweight='bold')
+
+        # Asse Y primario (sinistra) per la lunghezza della coda
+        ax1.set_xlabel('Tempo di Simulazione (s)', fontsize=14)
+        ax1.set_ylabel('N. Richieste in Coda (Scala Log)', fontsize=14, color='black')
+        ax1.set_yscale('log')
+        ax1.set_ylim(bottom=1)  # La scala logaritmica non può iniziare da 0
+        ax1.tick_params(axis='y', labelcolor='black')
+        ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        # --- 3. Plot delle Code ---
+        # Genera una palette di colori distinta per i worker
+        colors = sns.color_palette("husl", n_colors=num_workers)
+
+        for i in range(num_workers):
+            metrics = metrics_per_worker_base[i]
+            if metrics.queue_length_history:
+                # La history è una lista di tuple (timestamp, queue_length)
+                timestamps, lengths = zip(*metrics.queue_length_history)
+                ax1.plot(timestamps, lengths, label=f'Coda Worker {i}', color=colors[i], linewidth=2.5)
+
+        # --- 4. Plot Opzionale dei Pod (se overlay_pods è True) ---
+        ax2 = None
+        if overlay_pods:
+            # Crea un secondo asse Y (destra) che condivide l'asse X con il primo
+            ax2 = ax1.twinx()
+            ax2.set_ylabel('Numero di Pod Attivi', fontsize=14, color='dimgray')
+            # Forza i tick dell'asse Y dei pod ad essere interi
+            ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax2.tick_params(axis='y', labelcolor='dimgray')
+            # Imposta un limite massimo ragionevole per i pod
+            max_pods_config = getattr(self.config, 'MAX_PODS', 50)
+            ax2.set_ylim(bottom=0, top=max_pods_config * 1.1)
+
+            for i in range(num_workers):
+                metrics = metrics_per_worker_base[i]
+                if metrics.pod_count_history:
+                    timestamps, counts = zip(*metrics.pod_count_history)
+                    # Usa lo stesso colore della coda ma con più trasparenza (più chiaro)
+                    # e uno stile di linea diverso per evitare confusione.
+                    ax2.plot(timestamps, counts, label=f'Pod Worker {i}', color=colors[i],
+                             linestyle=':', linewidth=2, alpha=0.8)
+
+        # --- 5. Creazione Legenda Unificata e Salvataggio ---
+        # Combina le legende di entrambi gli assi in una sola
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = (ax2.get_legend_handles_labels() if ax2 else ([], []))
+
+        # Ordina le etichette per worker ID per una legenda più pulita
+        all_labels = labels1 + labels2
+        all_lines = lines1 + lines2
+        sorted_legend = sorted(zip(all_labels, all_lines), key=lambda x: x[0].split(' ')[-1])
+
+        # Estrai le etichette e le linee ordinate
+        if sorted_legend:
+            sorted_labels, sorted_lines = zip(*sorted_legend)
+            ax1.legend(sorted_lines, sorted_labels, loc='upper left', fontsize=12, title="Metriche per Worker")
+
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Aggiusta il layout per il titolo
+
+        # Crea la directory di output se non esiste
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Nome del file dinamico in base all'opzione di overlay
+        filename_suffix = "pods_overlay" if overlay_pods else "queues_only"
+        filename = f'worker_queues_{scenario_name}_rep{replica_idx}_{filename_suffix}.png'
+        save_path = os.path.join(output_dir, filename)
+
+        fig.savefig(save_path, dpi=300)
+        plt.close(fig)
+        print(f"Grafico salvato in: {save_path}")
