@@ -16,7 +16,7 @@ def main_blackfriday_analysis():
 
     # <-- MODIFICA: Imposta il numero di repliche che vuoi visualizzare -->
     NUM_REPLICATIONS = 5
-    config.SIMULATION_TIME = 30000
+    config.SIMULATION_TIME = 500
 
     # ... (la definizione di lambda_black_friday rimane la stessa) ...
     t_notte_fine = config.SIMULATION_TIME * 0.15
@@ -24,8 +24,8 @@ def main_blackfriday_analysis():
     t_picco1_fine = config.SIMULATION_TIME * 0.40
     t_pomeriggio_fine = config.SIMULATION_TIME * 0.70
     t_picco2_fine = config.SIMULATION_TIME * 0.80
-    CARICO_NOTTE = 10; CARICO_MATTINA = 10; CARICO_PICCO_1 = 300
-    CARICO_POMERIGGIO = 170; CARICO_PICCO_2 = 170
+    CARICO_NOTTE = 10; CARICO_MATTINA = 30; CARICO_PICCO_1 = 170
+    CARICO_POMERIGGIO = 85; CARICO_PICCO_2 = 300
     def lambda_black_friday(t: float) -> float:
         if t < t_notte_fine: return CARICO_NOTTE
         if t < t_mattina_fine: return CARICO_MATTINA
@@ -80,11 +80,17 @@ def main_blackfriday_analysis():
             config_module=config
         )
 
+        # ANALISI DEL TRANSITORIO #
         print("\n--- Generazione grafici di confronto repliche per scenario Black Friday ---")
         plotter.plot_blackfriday_replication_traces(
             all_results,
             lambda_func=lambda_black_friday,
             output_dir="output/black_friday_analysis/aggregated_traces"
+        )
+        plotter.plot_confidence_interval_trace(
+            all_results,
+            lambda_black_friday,
+            output_dir="output/black_friday_analysis/aggregated_traces/IC"
         )
 
 
