@@ -9,9 +9,12 @@ import seaborn as sns
 from collections import defaultdict
 from src import config
 from matplotlib.ticker import MaxNLocator
+import matplotlib.ticker as mticker
 # MODIFICA: Import mancanti aggiunti per usare isinstance()
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
+from src.utils.rvms import idfStudent  # Assumiamo che rvms.py sia disponibile nell'ambiente
+from math import sqrt
 
 matplotlib.use('Agg')
 plt.style.use('ggplot')
@@ -392,75 +395,264 @@ class PlotterBlackFriday:
         self._save_plot(output_dir, f"{run_prefix}_7_cumulative_loss_trace.png", fig)
 
 
-    def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
+    # NUOVA FUNZIONE HELPER per calcolare la media cumulativa
+    @staticmethod
+    def _calculate_cumulative_average(history: list):
         """
-        NUOVO: Genera due grafici separati per lo scenario Black Friday.
-        - Un grafico per il Baseline (FIFO) con le tracce di N repliche.
-        - Un grafico per il DWFQ con le tracce di N repliche.
+        Calcola la media cumulativa da una history di tuple (timestamp, valore).
+        Restituisce i timestamp e i valori della media cumulativa.
         """
+        if not history or len(history) < 2:
+            return [], []
+
+        # Ordina per timestamp, che è cruciale per una media cumulativa corretta
+        sorted_history = sorted(history, key=lambda x: x[0])
+        times, values = zip(*sorted_history)
+
+        # Calcola la media cumulativa usando numpy per efficienza
+        cumulative_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
+
+        return list(times), list(cumulative_avg)
+
+
+    # GRAFICI CON INTERVALLI DI CONFIDENZA (ESTIMATE)
+
+    @staticmethod
+    def _calculate_confidence_interval_from_estimate_py(sample: list, confidence: float = 0.95):
+        """
+        Calcola l'intervallo di confidenza per un campione di dati, replicando
+        esattamente l'algoritmo e le formule presenti in estimate.py.
+
+        Args:
+            sample (list): Una lista di valori numerici.
+            confidence (float): Il livello di confidenza desiderato (es. 0.95).
+
+        Returns:
+            tuple: (media, limite_inferiore, limite_superiore) o (None, None, None) se
+                   il calcolo non è possibile.
+        """
+        n = len(sample)
+        if n <= 1:
+            # Impossibile calcolare deviazione standard o intervallo
+            return None, None, None
+
+        # Replica di Welford's one-pass method da estimate.py per media e dev. std.
+        mean = 0.0
+        sum_sq_diff = 0.0
+        for i, x in enumerate(sample):
+            diff = x - mean
+            mean += diff / (i + 1)
+            sum_sq_diff += diff * (x - mean)
+
+        # La varianza campionaria è sum_sq_diff / (n-1).
+        # Lo stdev in estimate.py è sqrt(sum / n), dove sum è sum_sq_diff.
+        # Questo calcolo è leggermente diverso da np.std(ddof=1) ma ci atteniamo all'originale.
+        stdev = sqrt(sum_sq_diff / n)
+
+        # Calcolo dei parametri dell'intervallo, esattamente come in estimate.py
+        u = 1.0 - 0.5 * (1.0 - confidence)
+        t = idfStudent(n - 1, u)
+
+        # Formula esatta da estimate.py, con sqrt(n-1) al denominatore
+        w = t * stdev / sqrt(n - 1)
+
+        return mean, mean - w, mean + w
+
+
+    def plot_confidence_interval_trace(self, all_results: dict, lambda_func, output_dir: str, confidence=0.95):
+        """
+        MODIFICATO (v2): Genera un grafico con l'intervallo di confidenza.
+        Lo stile è stato migliorato per massima leggibilità e qualità professionale.
+        """
+        print("\n--- Generazione Grafico IC (metodo estimate.py) Stile Avanzato ---")
+        plt.style.use('seaborn-v0_8-whitegrid')
         sim_time = self.config.SIMULATION_TIME
         num_replications = len(all_results)
 
-        # Dizionario per contenere i dati delle medie mobili per ogni replica e modello
-        traces = {'baseline': [], 'wfq': []}
+        models_to_plot = {'baseline': 'Baseline (FIFO)', 'wfq': 'DWFQ'}
+        time_bin_size = '30s'
 
-        # Funzione helper per calcolare la media mobile (già presente nel tuo codice)
-        def get_ma(history):
-            TIME_WINDOW_STR = '60s'
-            if not history or len(history) < 2: return pd.Series(dtype=np.float64)
-            times, values = zip(*sorted(history, key=lambda x: x[0]))
-            s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
-            return s.resample('10s').mean().rolling(window=TIME_WINDOW_STR, min_periods=1).mean()
-
-        # 1. Calcola le tracce per ogni replica
-        for i in range(num_replications):
-            rep_data = all_results[i]
-
-            # Traccia per il Baseline
-            metrics_base = rep_data['baseline']
-            base_history_high_only = [h for rt, h_list in metrics_base.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH for h in h_list]
-            traces['baseline'].append(get_ma(base_history_high_only))
-
-            # Traccia per il DWFQ
-            metrics_wfq = rep_data['wfq']
-            wfq_history_high = metrics_wfq.response_times_history_by_prio.get(config.Priority.HIGH, [])
-            traces['wfq'].append(get_ma(wfq_history_high))
-
-        # 2. Crea i due grafici
-        for model in ['baseline', 'wfq']:
-            fig, ax = plt.subplots(figsize=(20, 8))
-
-            model_name_display = "Baseline (FIFO)" if model == 'baseline' else "DWFQ"
-            ax.set_title(f"Tracce delle Repliche per {model_name_display} - Scenario Black Friday", fontsize=18)
-
-            colors = sns.color_palette("viridis", n_colors=num_replications)
-
-            # Plotta ogni traccia di replica
+        for model_key, model_name_display in models_to_plot.items():
+            # --- 1. Preparazione Dati ---
+            replication_series = []
             for i in range(num_replications):
-                series = traces[model][i]
-                seed = all_results[i]['seed']
-                if series is not None and not series.empty:
-                    time_in_seconds = (series.index - pd.to_datetime(0, unit='s')).total_seconds()
-                    ax.plot(time_in_seconds, series.values, color=colors[i], lw=1.5, alpha=0.9, label=f'Seed: {seed}')
+                # ... (logica di estrazione dati invariata)
+                metrics = all_results[i].get(model_key)
+                if not metrics: continue
+                if model_key == 'baseline':
+                    history = [h for rt, h_list in metrics.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH for h in h_list]
+                else:
+                    history = metrics.response_times_history_by_prio.get(config.Priority.HIGH, [])
+                if not history: continue
+                times, values = zip(*history)
+                s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
+                replication_series.append(s.resample(time_bin_size).mean())
 
-            # Aggiungi il profilo di carico
+            if not replication_series: continue
+            df = pd.concat(replication_series, axis=1)
+
+            # --- 2. Calcolo Statistico ---
+            results = []
+            for index, row in df.iterrows():
+                sample = row.dropna().tolist()
+                mean, ci_lower, ci_upper = self._calculate_confidence_interval_from_estimate_py(sample, confidence)
+                results.append({'time': index, 'mean': mean, 'ci_lower': ci_lower, 'ci_upper': ci_upper})
+            results_df = pd.DataFrame(results).set_index('time').dropna()
+            if results_df.empty: continue
+
+            # --- 3. Plotting ---
+            fig, ax = plt.subplots(figsize=(20, 10))
+
+            # FIX 2: Font più grandi
+            ax.set_title(f'Tempo di Risposta Medio (HIGH Prio) con Intervallo di Confidenza al {int(confidence*100)}%\n'
+                         f'Modello: {model_name_display} - Basato su {num_replications} Repliche',
+                         fontsize=18, fontweight='bold')
+
+            time_in_seconds = (results_df.index - pd.to_datetime(0, unit='s')).total_seconds()
+
+            ax.plot(time_in_seconds, results_df['mean'], color='darkcyan', lw=2.5, label='Media tra Repliche')
+            ax.fill_between(time_in_seconds, results_df['ci_lower'], results_df['ci_upper'], color='darkcyan', alpha=0.2, label='Intervallo di Confidenza')
+
             ax_load = ax.twinx()
-            load_times = np.linspace(0, sim_time, num=2000)
+            load_times = np.linspace(0, sim_time, num=int(sim_time))
             load_values = [lambda_func(t) for t in load_times]
-            ax_load.plot(load_times, load_values, color='gray', linestyle=':', lw=2, alpha=0.7, label='Carico Applicato')
+            ax_load.plot(load_times, load_values, color='dimgray', linestyle=':', lw=2.5, alpha=0.8, label='Carico Applicato')
+            ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
+            ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
 
-            ax.set_xlabel("Tempo (s)", fontsize=14)
-            ax.set_ylabel("Tempo Risposta Medio (s) - HIGH Prio", fontsize=14)
-            ax.grid(True)
-            ax.set_ylim(bottom=0, top=5.0) # Imposta un limite Y fisso per confrontabilità
+            # Stile Avanzato
+            ax.set_xlabel("Tempo di Simulazione (s)", fontsize=16)
+            ax.set_ylabel("Tempo di Risposta Medio (s)", fontsize=16)
+            ax.tick_params(axis='both', which='major', labelsize=14)
+            ax.set_xlim(0, sim_time)
+            ax.set_ylim(bottom=0)
 
-            ax_load.set_ylabel("Carico (req/s)", color='gray', fontsize=14)
+            # FIX 1: Tick adattivi
+            ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
+            ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
 
-            # Combina le legende
+            # FIX 5: Griglia solo su assi primari
+            ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
+
+            # FIX 3: Bordo del grafico più spesso
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+                spine.set_edgecolor('black')
+
+            # FIX 6: Legenda migliorata
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=10)
+            ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',
+                      title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout()
-            self._save_plot(output_dir, f"blackfriday_traces_{model}.png", fig)
+            self._save_plot(output_dir, f"confidence_trace_blackfriday_{model_key}.png", fig)
 
+
+    # Funzione helper per calcolare la media mobile, ripristinata e strutturata
+    @staticmethod
+    def _calculate_moving_average(history: list, window_str: str = '60s', resample_str: str = '10s'):
+        """Calcola la media mobile basata sul tempo usando pandas."""
+        if not history or len(history) < 2:
+            return pd.Series(dtype=np.float64)
+        times, values = zip(*sorted(history, key=lambda x: x[0]))
+        s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
+        return s.resample(resample_str).mean().rolling(window=window_str, min_periods=1).mean()
+
+    # Nuova funzione helper per plottare una singola traccia, stile newPlotter
+    @staticmethod
+    def _plot_single_ma_trace(ax: plt.Axes, history: list, color: tuple, label: str):
+        """
+        Calcola e plotta la traccia della media mobile per una singola replica.
+        Restituisce il valore massimo della traccia per la scalatura dell'asse Y.
+        """
+        ma_series = PlotterBlackFriday._calculate_moving_average(history)
+        if ma_series.empty:
+            return 0
+
+        time_in_seconds = (ma_series.index - pd.to_datetime(0, unit='s')).total_seconds()
+        ax.plot(time_in_seconds, ma_series.values, color=color, label=label, linewidth=1.5, alpha=0.9)
+        return ma_series.max()
+
+    # Nuova funzione helper per lo stile del subplot, stile newPlotter
+    @staticmethod
+    def _style_replication_subplot(ax: plt.Axes, title: str, y_max: float):
+        """Applica uno stile standardizzato al subplot delle repliche."""
+        ax.set_title(title, fontsize=16, pad=12)
+        ax.set_ylabel('Tempo Risposta Medio Mobile (s)', fontsize=14)
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        ax.legend(fontsize=11, loc='upper left', title='Legenda')
+        ax.grid(True, which='both', linestyle='--', linewidth=0.6, alpha=0.7)
+        ax.set_ylim(bottom=0, top=y_max)
+
+
+    def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
+        """
+        MODIFICATO (v2): Genera grafici con le tracce della MEDIA MOBILE per ogni replica.
+        Lo stile è stato migliorato per massima leggibilità e qualità professionale.
+        """
+        print("\n--- Generazione Grafici Tracce Repliche (Media Mobile) Stile Avanzato ---")
+        plt.style.use('seaborn-v0_8-whitegrid')
+        sim_time = self.config.SIMULATION_TIME
+        num_replications = len(all_results)
+        models_to_plot = {'baseline': 'Baseline (FIFO)', 'wfq': 'DWFQ'}
+
+        for model_key, model_name_display in models_to_plot.items():
+            fig, ax = plt.subplots(figsize=(20, 10))
+
+            # FIX 2: Font più grandi per il titolo
+            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario Black Friday',
+                         fontsize=22, weight='bold')
+
+            # FIX 4: Palette di colori vibrante e ad alto contrasto
+            colors = sns.color_palette("husl", n_colors=num_replications)
+            max_y_val = 0
+
+            for i in range(num_replications):
+                rep_data = all_results[i]
+                metrics = rep_data.get(model_key)
+                if not metrics: continue
+
+                if model_key == 'baseline':
+                    history = [h for rt, h_list in metrics.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH for h in h_list]
+                else:
+                    history = metrics.response_times_history_by_prio.get(config.Priority.HIGH, [])
+
+                current_max = self._plot_single_ma_trace(ax, history, colors[i], f"Seed: {rep_data['seed']}")
+                if current_max > max_y_val:
+                    max_y_val = current_max
+
+            ax_load = ax.twinx()
+            load_times = np.linspace(0, sim_time, num=int(sim_time))
+            load_values = [lambda_func(t) for t in load_times]
+            ax_load.plot(load_times, load_values, color='dimgray', linestyle=':', lw=2.5, alpha=0.8, label='Carico Applicato')
+            ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
+            ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
+
+            # Applica Stile Avanzato
+            ax.set_xlabel('Tempo di Simulazione (s)', fontsize=16)
+            ax.set_ylabel('Tempo Risposta Medio Mobile (s)', fontsize=16)
+            ax.tick_params(axis='both', which='major', labelsize=14)
+            ax.set_xlim(0, sim_time)
+            if max_y_val > 0: ax.set_ylim(bottom=0, top=max_y_val * 1.15)
+
+            # FIX 1: Tick adattivi
+            ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
+            ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
+
+            # FIX 5: Griglia solo su assi primari (comportamento di default di ax.grid)
+            ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
+
+            # FIX 3: Bordo del grafico più spesso
+            for spine in ax.spines.values():
+                spine.set_linewidth(1.5)
+                spine.set_edgecolor('black')
+
+            # FIX 6: Legenda migliorata
+            lines, labels = ax.get_legend_handles_labels()
+            lines2, labels2 = ax_load.get_legend_handles_labels()
+            ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',
+                      title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
+
+            fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+            self._save_plot(output_dir, f"replication_traces_ma_blackfriday_{model_key}.png", fig)
