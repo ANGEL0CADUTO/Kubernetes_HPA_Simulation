@@ -2,6 +2,9 @@ import math
 import numpy as np
 from scipy.stats import t, chi2
 
+from welford import Welford
+
+
 # --- TEST DI INDIPENDENZA (Ljung–Box) ---
 def ljung_box_test(x, h=10):
     """
@@ -25,7 +28,7 @@ def ljung_box_test(x, h=10):
     return pval
 
 # --- FUNZIONE PER CALCOLARE B la size ---
-def compute_batch_size(data, k_initial_target=64, threshold=0.2): # Rinominato k in k_initial_target per chiarezza
+def compute_batch_size(data, k_initial_target, threshold):
     n = len(data)
 
     # Se i dati sono insufficienti per almeno 2 batch, non possiamo procedere
@@ -65,7 +68,7 @@ def compute_batch_size(data, k_initial_target=64, threshold=0.2): # Rinominato k
 
         if abs(rho1) < threshold:
             # Trovato il b ottimale. Restituisci b, il k effettivo e rho1.
-            return b, current_k, rho1 # MODIFICATO: aggiunto current_k al ritorno!
+            return b, current_k, rho1
 
         # Incrementa b e prova con una dimensione del batch più grande
         b += 1
@@ -75,7 +78,7 @@ def compute_batch_size(data, k_initial_target=64, threshold=0.2): # Rinominato k
 
 # --- FUNZIONE BATCH MEANS CON WELFORD ---
 def batch_means(data, b, k, confidence=0.95):
-    from welford import Welford
+    # 'from .welford import Welford' is now at the top of the file.
 
     n = b * k
     data = np.asarray(data[:n])
@@ -98,6 +101,6 @@ def batch_means(data, b, k, confidence=0.95):
         "ci": (mean - half_width, mean + half_width),
         "half_width": half_width,
         "confidence_level": confidence,
-        "num_batches": k, # Questo è già corretto
+        "num_batches": k,
         "batch_size": b
     }

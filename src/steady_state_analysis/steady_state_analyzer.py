@@ -1,6 +1,3 @@
-
-
-
 import os
 from enum import Enum
 
@@ -18,10 +15,20 @@ class SimulationMode(Enum):
 
 class SteadyStateAnalyzer:
     """
-    Classe per analisi steady-state o terminating replicata.
-    Compatibile con Metrics e MetricsWithPriority del main.py.
+    Classe per l'analisi dello stato stazionario (steady-state) o replicata (terminating)
+    dei risultati di simulazione. Implementa tecniche come Batch Means per la stima
+    di intervalli di confidenza e metodi per la stima del periodo di warm-up.
+
+    È compatibile con le classi Metrics e MetricsWithPriority.
     """
     def __init__(self, metrics, config):
+        """
+        Inizializza l'analizzatore con le metriche della simulazione e la configurazione.
+
+        Args:
+            metrics: Istanza della classe Metrics o MetricsWithPriority contenente i dati della simulazione.
+            config: Oggetto di configurazione con parametri come CONFIDENCE_LEVEL, WARMUP_METHOD, ecc.
+        """
         self.metrics = metrics
         self.config = config
         self.mode = getattr(config, "SIMULATION_MODE", SimulationMode.STEADY_STATE)
@@ -29,11 +36,16 @@ class SteadyStateAnalyzer:
         self.rel_precision = getattr(config, "REL_PRECISION", None)
         self.abs_precision = getattr(config, "ABS_PRECISION", None)
         self.warmup_method = getattr(config, "WARMUP_METHOD", "MSER5")
+        self.confidence_level = getattr(config, "CONFIDENCE_LEVEL", 0.95)
+
 
     def extract_response_times_values(self) -> list[float]:
         """
         Estrae solo i valori dei tempi di risposta (senza timestamp)
-        per l'analisi del warm-up.
+        per l'analisi del warm-up o per altre analisi statistiche.
+
+        Returns:
+            list[float]: Lista dei valori dei tempi di risposta.
         """
         all_responses = self.metrics.get_all_response_times_with_timestamps()
         return [resp_time for _, resp_time in all_responses]
@@ -41,237 +53,469 @@ class SteadyStateAnalyzer:
     def extract_full_response_data(self) -> list[tuple[float, float]]:
         """
         Estrae sia i timestamp che i valori dei tempi di risposta.
+        Utile per convertire gli indici di warm-up in durate temporali.
+
+        Returns:
+            list[tuple[float, float]]: Lista di tuple (timestamp, tempo_risposta).
         """
         return self.metrics.get_all_response_times_with_timestamps()
 
 
     def estimate_warmup(self, values_for_warmup_analysis: list[float], full_data_with_timestamps: list[tuple[float, float]]) -> float:
         """
-        Stima la durata del warm-up in SECONDI.
+        Stima la durata del warm-up in SECONDI utilizzando il metodo configurato (Welch o MSER5).
+
         Args:
-            values_for_warmup_analysis: Solo i valori (es. tempi di risposta) per l'analisi del warm-up.
-            full_data_with_timestamps: I dati completi (timestamp, valore) per convertire l'indice in tempo.
+            values_for_warmup_analysis (list[float]): Solo i valori (es. tempi di risposta)
+                                                      utilizzati direttamente dal metodo di warm-up.
+            full_data_with_timestamps (list[tuple[float, float]]): I dati completi (timestamp, valore)
+                                                                    per convertire l'indice di warm-up in tempo.
+
         Returns:
             float: Il tempo di warm-up stimato in secondi.
         """
         if not values_for_warmup_analysis or len(values_for_warmup_analysis) < 2:
-            print("  DEBUG(Analyzer): Dati insufficienti per stimare il warm-up, ritorno 0s.")
+            print("  DEBUG(Analyzer): Dati insufficienti per stimare il warm-up. Ritorno 0s.")
             return 0.0
 
+        warmup_index = 0
         if self.warmup_method == "WELCH":
             warmup_index = self._welch(np.array(values_for_warmup_analysis))
+            print(f"  DEBUG(Analyzer): Metodo Welch ha stimato un indice di warm-up: {warmup_index}")
         elif self.warmup_method == "MSER5":
             warmup_index = self._mser5(np.array(values_for_warmup_analysis))
-        else: # Default a un warmup minimo se il metodo non è riconosciuto
-            warmup_index = 0
-
-        # Ora convertiamo l'indice in un tempo
-        if warmup_index >= len(full_data_with_timestamps):
-
-            estimated_warmup_time =self.config.STEADY_SIMULATION_TIME * 0.8
-            print(f"  DEBUG(Analyzer): Warmup_index {warmup_index} fuori range ({len(full_data_with_timestamps)}). Assegno warmup di {estimated_warmup_time:.2f}s.")
+            print(f"  DEBUG(Analyzer): Metodo MSER5 ha stimato un indice di warm-up: {warmup_index}")
         else:
-            # Il tempo di warm-up è il timestamp di completamento all'indice stimato.
-            # Se warmup_index è 0, significa che non c'è warm-up o è molto breve,
-            # quindi il tempo di warm-up è il timestamp del primo evento.
-            estimated_warmup_time = full_data_with_timestamps[warmup_index][0] if warmup_index > 0 else full_data_with_timestamps[0][0]
+            print(f"  DEBUG(Analyzer): Metodo di warm-up '{self.warmup_method}' non riconosciuto. Non viene applicato un warm-up o viene impostato a 0.")
+            warmup_index = 0 # Nessun warmup specifico se il metodo non è valido
 
+        estimated_warmup_time = 0.0
+        if warmup_index == 0:
+            # Se l'indice è 0, il metodo ha indicato che il sistema è già in stato stazionario
+            # o non ci sono abbastanza dati per stimare un warm-up.
+            estimated_warmup_time = 0.0
+            print("  DEBUG(Analyzer): Warm-up index è 0, tempo di warm-up impostato a 0s.")
+        elif warmup_index >= len(full_data_with_timestamps):
+            # Se l'indice di warm-up è fuori dal range dei dati, potrebbe indicare che il
+            # sistema non si è stabilizzato entro la durata della simulazione.
+            # Assegniamo un valore conservativo.
+            estimated_warmup_time = self.config.STEADY_SIMULATION_TIME * 0.8
+            print(f"  WARNING(Analyzer): Warmup_index {warmup_index} fuori range ({len(full_data_with_timestamps)}). "
+                  f"Il sistema non sembra stabilizzarsi. Assegno un warmup conservativo di {estimated_warmup_time:.2f}s "
+                  f"(80% della durata totale della simulazione).")
+        else:
+            # Il tempo di warm-up è il timestamp dell'evento che corrisponde all'indice stimato.
+            estimated_warmup_time = full_data_with_timestamps[warmup_index][0]
 
-        # Per evitare che il warmup sia l'intera simulazione
-        if estimated_warmup_time >= self.config.STEADY_SIMULATION_TIME* 0.95:
-            estimated_warmup_time = self.config.STEADY_SIMULATION_TIME * 0.8 # Lascia almeno il 20% per lo steady-state
-            print(f"  DEBUG(Analyzer): Warmup stimato troppo lungo. Ridotto a {estimated_warmup_time:.2f}s.")
+        # Per evitare che il warmup sia quasi l'intera simulazione,
+        # lo limitiamo ad un massimo dell'80% della durata totale. Questo garantisce
+        # che rimanga una porzione significativa di dati per l'analisi dello stato stazionario.
+        if estimated_warmup_time >= self.config.STEADY_SIMULATION_TIME * 0.95:
+            original_estimated_time = estimated_warmup_time
+            estimated_warmup_time = self.config.STEADY_SIMULATION_TIME * 0.8
+            print(f"  WARNING(Analyzer): Tempo di warm-up stimato ({original_estimated_time:.2f}s) troppo lungo "
+                  f"(> 95% della simulazione). Ridotto conservativamente a {estimated_warmup_time:.2f}s "
+                  f"(80% della durata totale della simulazione) per lasciare dati per lo steady-state.")
 
-        print(f"  DEBUG(Analyzer): Indice di warm-up stimato: {warmup_index}, Tempo di warm-up finale: {estimated_warmup_time:.2f}s.")
+        print(f"  DEBUG(Analyzer): Tempo di warm-up finale stimato: {estimated_warmup_time:.2f}s.")
         return estimated_warmup_time
 
     def _welch(self, x: np.ndarray) -> int:
+        """
+        Implementazione euristica del metodo di Welch per la stima del warm-up.
+        Cerca il punto in cui la media mobile della serie si stabilizza.
 
-        window = max(5, int(min(50, len(x)) // 10))
-        if window < 1 or len(x) < window * 2:
+        Args:
+            x (np.ndarray): Array dei valori da analizzare (e.g., tempi di risposta).
+
+        Returns:
+            int: L'indice del punto di inizio dello stato stazionario.
+        """
+        n = len(x)
+        if n < 50:
+            print("  DEBUG(Analyzer): Dati insufficienti (n < 50) per il metodo Welch, ritorno 0.")
             return 0
+
+        # La dimensione della finestra di smoothing è un parametro critico.
+        # Una finestra euristica comune è circa il 10% della lunghezza della serie,
+        # con un minimo per garantire un smoothing significativo.
+        window = max(5, int(min(50, n) // 10))
+        if window < 1 or n < window * 2:
+            print(f"  DEBUG(Analyzer): Impossibile creare finestra valida per Welch con n={n}, window={window}. Ritorno 0.")
+            return 0
+
+        # Calcola la media mobile. 'mode='valid'' assicura che il risultato
+        # contenga solo punti dove la finestra è completamente all'interno dei dati.
         smoothed = np.convolve(x, np.ones(window)/window, mode='valid')
         if len(smoothed) < 2:
+            print("  DEBUG(Analyzer): Dati smoothed insufficienti per il metodo Welch per calcolare le differenze, ritorno 0.")
             return 0
+
+        # Calcola la deviazione standard della serie smoothed.
+        std_smoothed = np.std(smoothed)
+        if std_smoothed == 0:
+            # Se la serie smoothed è costante, non c'è transitorio evidente.
+            print("  DEBUG(Analyzer): Serie smoothed costante, nessun transitorio rilevato con Welch, ritorno 0.")
+            return 0
+
+        # Le differenze assolute tra elementi consecutivi della serie smoothed.
         diffs = np.abs(np.diff(smoothed))
-        if np.std(smoothed) == 0:
-            return 0
-        valid_cutoffs = np.where(diffs < np.std(smoothed)/100)[0]
+
+        # Soglia euristica: un decimo della deviazione standard della serie smoothed.
+        # Se le variazioni scendono sotto questa soglia, si presume stabilità.
+        threshold_welch = std_smoothed / 10.0
+
+        # Trova gli indici dove le differenze scendono sotto la soglia.
+        valid_cutoffs = np.where(diffs < threshold_welch)[0]
+
+        # Il primo punto in cui la variazione è stabile è il candidato per il warm-up.
+        # Si aggiunge 'window - 1' per riallineare l'indice con la serie originale.
+        # Se non ci sono cutoff validi, si presume 0 (già in stato stazionario o molto variabile).
+        # L'indice da `convolve` in `valid` mode è già shiftato, il `cutoff` è direttamente l'indice
+        # approssimativo nella serie originale, ma per maggiore precisione, se si volesse l'inizio esatto
+        # della finestra, si dovrebbe fare `cutoff + (window - 1)`. Per semplicità, si usa `cutoff`.
         cutoff = valid_cutoffs[0] if len(valid_cutoffs) > 0 else 0
+
+        # Consideriamo che un warmup di 0 indichi che non è stato trovato un punto di cutoff significativo.
         return cutoff if cutoff > 0 else 0
 
     def _mser5(self, x: np.ndarray) -> int:
+        """
+        Implementazione euristica del metodo MSER-5 (Mean Square Error for the Sample Mean)
+        per la stima del warm-up. Cerca di minimizzare la varianza della media campionaria
+        della porzione di dati considerata in stato stazionario.
 
+        Args:
+            x (np.ndarray): Array dei valori da analizzare.
+
+        Returns:
+            int: L'indice del punto di inizio dello stato stazionario.
+        """
         n = len(x)
-        if n < 200: # MSER5 ha bisogno di più dati
+        if n < 200: # MSER5 generalmente ha bisogno di più dati per essere efficace
+            print("  DEBUG(Analyzer): Dati insufficienti (n < 200) per il metodo MSER5, ritorno 0.")
             return 0
+
+        # Dimensione della finestra per la media mobile. È un parametro euristico,
+        # spesso circa n/20.
         window = max(5, n // 20)
         if window < 1 or n < window * 2:
-            return 0
-        # ...
-        mv = np.convolve(x, np.ones(window)/window, mode="valid")
-        if len(mv) < 1:
+            print(f"  DEBUG(Analyzer): Impossibile creare finestra valida per MSER5 con n={n}, window={window}. Ritorno 0.")
             return 0
 
         best_t0, best_var = 0, float("inf")
 
-        for t0 in range(0, n - window * 2):
+        # Iteriamo su possibili punti di inizio t0.
+        # Dobbiamo assicurarci che ci siano abbastanza dati dopo t0
+        # per calcolare almeno una media mobile e poi la varianza.
+        for t0 in range(0, n - window): # Garantisce almeno `window` elementi rimanenti
             resid = x[t0:]
 
-            if len(resid) < window*2:
+            if len(resid) < window: # Assicurati che resid abbia almeno la lunghezza della finestra
                 break
 
+            # Calcola la media mobile sulla porzione 'resid'.
             convolved_resid = np.convolve(resid, np.ones(window)/window, mode="valid")
-            if len(convolved_resid) < 2:
+
+            if len(convolved_resid) < 2: # Abbiamo bisogno di almeno due punti per calcolare la varianza
                 continue
 
-            v = np.var(convolved_resid, ddof=1)
+            # Calcola la varianza campionaria delle medie mobili.
+            v = np.var(convolved_resid, ddof=1) # ddof=1 per varianza campionaria
             if v < best_var:
                 best_var, best_t0 = v, t0
+
+        # Se best_t0 è 0 e best_var è ancora inf, significa che non sono stati trovati dati validi
+        if best_var == float("inf"):
+            print("  DEBUG(Analyzer): MSER5 non ha trovato una varianza minimizzata, ritorno 0.")
+            return 0
+
         return best_t0
 
     # --------------------------
-    # Batch Means Analysis
+    # Analisi Batch Means per Steady-State
     # --------------------------
-    def steady_state_analysis(self, values, confidence=0.95, threshold=0.2):
-        """Restituisce mean, ci95, batch info, Ljung-Box p-value"""
-        b, k = compute_batch_size(values, threshold=threshold)
-        if b is None or k is None:
+    def steady_state_analysis(self, values: list[float], confidence: float = 0.95, threshold: float = 0.2):
+        """
+        Esegue l'analisi Batch Means su una serie di valori per stimare la media
+        e l'intervallo di confidenza per lo stato stazionario.
+        Include un controllo sulla precisione raggiunta e sul test di indipendenza Ljung-Box.
+
+        Args:
+            values (list[float]): La serie di osservazioni (e.g., tempi di risposta).
+            confidence (float): Il livello di confidenza desiderato (e.g., 0.95).
+            threshold (float): La soglia per l'autocorrelazione di lag 1 per `compute_batch_size`.
+
+        Returns:
+            dict | None: Dizionario con media, CI, dettagli batch, p-value Ljung-Box e stato precisione,
+                         o None se i dati sono insufficienti o i batch non sono validi.
+        """
+        if not values or len(values) < 20: # Richiede un numero minimo di dati per l'analisi
+            print("  DEBUG(Analyzer): Dati insufficienti per l'analisi Batch Means (min 20 richiesti), ritorno None.")
             return None
 
-        mean, ci95 = batch_means(values, b, k, confidence)
-        batches = [np.mean(values[i*b:(i+1)*b]) for i in range(k)]
-        pval = ljung_box_test(batches, h=min(10, k-1))
+        # MODIFIED: Utilizziamo k_min_target=40 per la funzione compute_batch_size.
+        # Questo assicura che cerchiamo di ottenere almeno 40 batch per un'analisi robusta.
+        b, k, rho1 = compute_batch_size(values,k_initial_target=64, threshold=threshold)
+
+        if b is None or k is None or b <= 0 or k <= 0:
+            print("  DEBUG(Analyzer): compute_batch_size non ha restituito b e k validi per Batch Means, ritorno None.")
+            return None
+
+        if k < 2: # Non si può calcolare un CI con meno di 2 batch.
+            print(f"  DEBUG(Analyzer): Numero di batch insufficiente ({k}) per Batch Means. Ritorno None.")
+            return None
+
+        # Esegue l'analisi Batch Means per ottenere media, CI e semi-ampiezza.
+        batch_means_output = batch_means(values, b, k, confidence)
+
+        if batch_means_output is None:
+            print("  WARNING(Analyzer): batch_means ha restituito None. Impossibile calcolare il CI.")
+            return None
+
+        mean = batch_means_output['mean']
+        ci95 = batch_means_output['ci']
+        half_width = batch_means_output['half_width']
+
+        # Esegui il test di Ljung-Box sulle medie dei batch per verificare l'indipendenza.
+        # Si assumono le medie di batch generate internamente da batch_means per il test di Ljung-Box.
+        # La funzione batch_means non restituisce le singole medie, quindi le ricalcoliamo per il test.
+        batches_for_ljung_box = [np.mean(values[i*b:(i+1)*b]) for i in range(k)]
+
+        if len(batches_for_ljung_box) < 2:
+            pval = None
+            independence_ok = False
+            print("  DEBUG(Analyzer): Troppo pochi batch per il test Ljung-Box.")
+        else:
+            # h è il numero di lag da testare. Spesso si usa min(10, k-1) per non avere troppi lag
+            # rispetto al numero di osservazioni (batch).
+            pval = ljung_box_test(batches_for_ljung_box, h=min(10, k-1))
+            independence_ok = (pval is not None) and (pval > self.alpha)
+
+        # Verifica della precisione raggiunta.
+        # La precisione assoluta (half_width <= abs_precision) o relativa (half_width/mean <= rel_precision)
+        # è un criterio fondamentale per la validazione della simulazione.
+        precision_met = True
+        if self.abs_precision is not None and half_width > self.abs_precision:
+            precision_met = False
+        # Per la precisione relativa, si deve gestire il caso mean == 0 per evitare divisioni per zero.
+        if self.rel_precision is not None:
+            if mean != 0 and (half_width / abs(mean)) > self.rel_precision:
+                precision_met = False
+            elif mean == 0 and half_width > 0:
+                # Se la media è 0 e il CI non è 0, la precisione relativa non è raggiunta.
+                precision_met = False
+
         return {
             "mean": mean,
             "ci": ci95,
-            "half_width": (ci95[1]-ci95[0])/2,
+            "half_width": half_width,
             "batch_size": b,
             "num_batches": k,
             "ljung_box_pvalue": pval,
-            "independence_ok": (pval is None) or (pval > 0.05),
-            "confidence_level": confidence
+            "independence_ok": independence_ok,
+            "confidence_level": confidence,
+            "precision_met": precision_met
         }
 
     # --------------------------
-    # Terminating (repliche)
+    # Analisi Terminating (Repliche) - Non usata direttamente per Steady-State in questo contesto
     # --------------------------
-    def terminating_analysis(self, replications, confidence=0.95):
+    def terminating_analysis(self, replications: list[float], confidence: float = 0.95) -> dict | None:
+        """
+        Esegue l'analisi statistica per simulazioni terminating replicate.
+
+        Args:
+            replications (list[float]): Lista delle medie ottenute da ciascuna replica.
+            confidence (float): Livello di confidenza desiderato.
+
+        Returns:
+            dict | None: Dizionario con media, CI, semi-ampiezza, livello di confidenza e numero di repliche,
+                         o None se ci sono meno di 2 repliche.
+        """
         n = len(replications)
         if n < 2:
+            print("  DEBUG(Analyzer): Meno di 2 replicazioni per l'analisi terminating, ritorno None.")
             return None
+
         mean = np.mean(replications)
-        s2 = np.var(replications, ddof=1)
-        tval = t.ppf((1 + confidence)/2, df=n-1)
-        hw = tval * np.sqrt(s2 / n)
+        s2 = np.var(replications, ddof=1) # Varianza campionaria
+        dof = n - 1
+
+        if dof <= 0 or np.isnan(s2):
+            half_width = np.nan
+            ci_lower, ci_upper = np.nan, np.nan
+        else:
+            tval = t.ppf((1 + confidence)/2, df=dof)
+            half_width = tval * np.sqrt(s2 / n)
+            ci_lower = mean - half_width
+            ci_upper = mean + half_width
+
         return {
             "mean": mean,
-            "ci": (mean - hw, mean + hw),
-            "half_width": hw,
+            "ci": (ci_lower, ci_upper),
+            "half_width": half_width,
             "confidence_level": confidence,
             "replications": n
         }
 
     # --------------------------
-    # Plot CI
+    # Plot dell'Intervallo di Confidenza
     # --------------------------
-    def plot_confidence_interval(self, results, title, output_dir, filename):
-        fig, ax = plt.subplots(figsize=(6, 5))
+    def plot_confidence_interval(self, results: dict, title: str, output_dir: str, filename: str):
+        """
+        Genera un grafico a barra di errore per visualizzare l'intervallo di confidenza.
+
+        Args:
+            results (dict): Dizionario contenente i risultati dell'analisi CI.
+            title (str): Titolo del grafico.
+            output_dir (str): Directory di output per il salvataggio del grafico.
+            filename (str): Nome del file del grafico (es. "response_time_ci.png").
+        """
+        if not results or np.isnan(results.get("mean", np.nan)) or np.isnan(results.get("half_width", np.nan)):
+            print(f"  WARNING(Analyzer): Impossibile generare plot per '{title}', risultati non validi (NaN o mancanti).")
+            return
+
+        fig, ax = plt.subplots(figsize=(8, 6), layout="constrained") # Added layout="constrained"
         ax.errorbar(x=[0], y=[results["mean"]], yerr=results["half_width"], fmt='o', color='b',
-                    capsize=10, markersize=8, elinewidth=3, label='CI')
-        ax.set_title(title, fontsize=14, fontweight='bold')
+                    capsize=10, markersize=8, elinewidth=3, label=f'CI {results["confidence_level"]:.0%}')
+        ax.set_title(title, pad=20)
         ax.set_ylabel('Valore Medio')
         ax.set_xticks([])
-        ax.grid(True, axis='y', linestyle='--', alpha=0.7)
-        # Testo CI
+        ax.grid(True, axis='y', alpha=0.7)
+        ax.set_xlim([-1, 1])
+
+        # Prepare CI text, handling None p-value
+        ljung_box_pvalue_str = f"{results['ljung_box_pvalue']:.4f}" if results.get('ljung_box_pvalue') is not None else "N/A"
         ci_text = (
-            f"Media: {results['mean']:.3f}\n"
-            f"CI al {results['confidence_level']:.0%}: [{results['ci'][0]:.3f}, {results['ci'][1]:.3f}]\n"
-            f"Batch size: {results.get('batch_size','?')}, "
-            f"#Batch: {results.get('num_batches','?')}\n"
-            f"Ljung–Box p: {results.get('ljung_box_pvalue','N/A')}"
+            f"Media stimata: {results['mean']:.4f}\n"
+            f"CI al {results['confidence_level']:.0%}: [{results['ci'][0]:.4f}, {results['ci'][1]:.4f}]\n"
+            f"Semi-ampiezza CI: {results['half_width']:.4f}\n"
+            f"Batch size: {results.get('batch_size','N/A')}, "
+            f"Numero Batch: {results.get('num_batches','N/A')}\n"
+            f"Ljung–Box p-value: {ljung_box_pvalue_str}\n"
+            f"Indipendenza Batch: {'OK' if results.get('independence_ok', False) else 'NO'}\n"
+            f"Precisione Desiderata: {'Raggiunta' if results.get('precision_met', False) else 'NON Raggiunta'}"
         )
-        ax.text(0.05, 0.95, ci_text, transform=ax.transAxes, fontsize=10,
-                verticalalignment='top', bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.5))
+        ax.text(0.02, 0.98, ci_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.6, edgecolor='gray'))
+
         plt.tight_layout()
         os.makedirs(output_dir, exist_ok=True)
         plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches='tight')
         plt.close(fig)
 
     # --------------------------
-    # Print risultati CI
+    # Stampa Risultati CI
     # --------------------------
-    def print_ci_results(self, results, metric_name):
+    def print_ci_results(self, results: dict | None, metric_name: str):
+        """
+        Stampa i risultati dell'analisi dell'intervallo di confidenza.
+        """
         if not results:
             print(f"Nessun risultato valido per '{metric_name}'")
             return
-        print(f"Batch Means per '{metric_name}':")
-        print(f"  - Media: {results['mean']:.4f}")
-        print(f"  - CI {results['confidence_level']:.0%}: ({results['ci'][0]:.4f}, {results['ci'][1]:.4f})")
-        print(f"  - Batch size: {results.get('batch_size','?')}, #Batch: {results.get('num_batches','?')}")
+        print(f"\n--- Risultati Analisi Batch Means per '{metric_name}' ---")
+        print(f"  - Media: {results['mean']:.6f}")
+        print(f"  - CI {results['confidence_level']:.0%}: ({results['ci'][0]:.6f}, {results['ci'][1]:.6f})")
+        print(f"  - Semi-ampiezza CI (Half-Width): {results['half_width']:.6f}")
+        print(f"  - Batch size: {results.get('batch_size','N/A')}, #Batch: {results.get('num_batches','N/A')}")
         if 'ljung_box_pvalue' in results:
             p = results['ljung_box_pvalue']
-            print(f"  - Ljung–Box p: {p:.4f} ({'OK' if results['independence_ok'] else '-> ATTENZIONE autocorrelazione'})")
+            # MODIFIED: Handle None p-value explicitly
+            if p is None:
+                print(f"  - Ljung–Box p-value: N/A (Dati insufficienti per il test)")
+            else:
+                print(f"  - Ljung–Box p-value: {p:.4f} ({'OK' if results['independence_ok'] else '-> ATTENZIONE autocorrelazione residua'})")
+        if 'precision_met' in results:
+            print(f"  - Precisione desiderata: {'RAGGIUNTA' if results['precision_met'] else 'NON RAGGIUNTA'}")
+        print(f"----------------------------------------------------")
 
 
-
-
-
-    def calculate_throughput_ci(self,completion_timestamps,warmup_period,confidence_level=0.95,threshold=0.2):
+    def calculate_throughput_ci(self, completion_timestamps: list[float], warmup_period: float) -> dict | None:
         """
         Calcola il throughput medio (eventi/sec) e il suo intervallo di confidenza
-        utilizzando il metodo Batch Means su una serie di timestamp di eventi.
+        utilizzando il metodo Batch Means su una serie di throughput campionati in batch temporali.
 
         Args:
-            completion_timestamps (list[float]): timestamp degli eventi completati
-            warmup_period (float): tempo di warm-up da escludere
-            confidence_level (float): livello di confidenza per IC
-            threshold (float): soglia per calcolo batch size
+            completion_timestamps (list[float]): Timestamp degli eventi completati (già ordinati).
+            warmup_period (float): Tempo di warm-up da escludere.
 
         Returns:
-            dict | None: dizionario con mean, ci, half_width, total_count, ecc.
+            dict | None: Dizionario con mean, ci, half_width, ecc., o None se i dati sono insufficienti.
         """
-        # 1. Filtra i dati per rimuovere il transitorio
+        # 1. Filtra i dati per rimuovere il transitorio (warm-up).
         steady_state_timestamps = [t for t in completion_timestamps if t >= warmup_period]
 
-        if not steady_state_timestamps:
-            print("Warning: Nessun dato in steady-state per calcolare il throughput.")
+        if not steady_state_timestamps or len(steady_state_timestamps) < 2:
+            print("  WARNING(Analyzer): Meno di 2 timestamp in steady-state per calcolare il throughput. Ritorno None.")
             return None
 
-        # 2. Calcola throughput come inverse inter-arrival times
-        interarrivals = np.diff(steady_state_timestamps)
-        if len(interarrivals) == 0:
-            print("Warning: Non ci sono inter-arrival per calcolare il throughput.")
+        # 2. Determina l'intervallo di tempo effettivo dello stato stazionario dopo il warm-up.
+        ss_start_time = steady_state_timestamps[0]
+        ss_end_time = steady_state_timestamps[-1]
+        total_ss_duration = ss_end_time - ss_start_time
+
+        # Se la durata effettiva dello stato stazionario è troppo breve, non possiamo creare batch temporali significativi.
+        if total_ss_duration <= 0.1: # Minimo 0.1 secondi per avere un intervallo valido.
+            print(f"  WARNING(Analyzer): Durata totale dello steady-state ({total_ss_duration:.2f}s) troppo breve per il throughput. Ritorno None.")
             return None
 
-        throughputs = 1.0 / interarrivals
+        # 3. Genera campioni di throughput in "batch temporali".
+        # L'obiettivo è creare una serie di osservazioni di throughput (eventi/secondo)
+        # su cui poter applicare successivamente il metodo Batch Means.
+        # Desideriamo almeno `k_min_target` (40) campioni per l'input di `compute_batch_size`.
 
-        # 3. Determina il batch size usando compute_batch_size
-        batch_result = compute_batch_size(throughputs, threshold=threshold)
-        if not batch_result or len(batch_result) < 2:
-            print("Warning: compute_batch_size non ha restituito b e k validi.")
+        # Inizializziamo con una durata minima per batch temporale
+        min_temporal_batch_duration = 1.0 # Ogni campione di throughput rappresenta almeno 1 secondo di osservazione
+
+        # Calcoliamo il numero massimo di batch temporali possibili con la durata minima.
+        max_possible_temporal_batches = int(total_ss_duration / min_temporal_batch_duration)
+
+        # Il numero di batch temporali effettivi sarà il massimo tra 2 (minimo per analisi) e un valore
+        # che ci dia sufficienti campioni per `compute_batch_size` (e.g., k_min_target=40).
+        num_temporal_batches = max(2, max_possible_temporal_batches)
+        if num_temporal_batches < 2:
+            print(f"  WARNING(Analyzer): Troppo pochi campioni temporali di throughput ({num_temporal_batches}) per il calcolo CI. Ritorno None.")
             return None
 
-        b, k = int(batch_result[0]), int(batch_result[1])
-        if b <= 0 or k <= 0:
-            print("Warning: batch_size o num_batches <= 0, impossibile calcolare batch means.")
+        # La durata di ogni batch temporale viene calcolata in modo da dividere equamente
+        # la durata totale dello steady-state nel numero desiderato di batch.
+        temporal_batch_duration = total_ss_duration / num_temporal_batches
+        if temporal_batch_duration <= 0:
+            print(f"  WARNING(Analyzer): Durata del batch temporale non valida ({temporal_batch_duration:.2f}s). Ritorno None.")
             return None
 
-        # 4. Calcola batch means
-        results = batch_means(throughputs, b, k, confidence=confidence_level)
+        throughput_samples = []
+        current_event_idx = 0 # Indice per scorrere i timestamp in modo efficiente
 
-        # 5. Test di indipendenza (Ljung-Box)
-        batch_values = [np.mean(throughputs[i*b:(i+1)*b]) for i in range(k)]
-        pval = ljung_box_test(batch_values, h=min(10, k-1))
-        results["ljung_box_pvalue"] = pval
-        results["independence_ok"] = (pval is None) or (pval > 0.05)
-        results["total_count"] = len(steady_state_timestamps)
+        for i in range(num_temporal_batches):
+            batch_start_time = ss_start_time + i * temporal_batch_duration
+            batch_end_time = ss_start_time + (i + 1) * temporal_batch_duration
 
-        return results
+            events_in_batch = 0
+            # Contiamo gli eventi che cadono all'interno di questo batch temporale.
+            while current_event_idx < len(steady_state_timestamps) and \
+                    steady_state_timestamps[current_event_idx] < batch_end_time:
+                if steady_state_timestamps[current_event_idx] >= batch_start_time:
+                    events_in_batch += 1
+                current_event_idx += 1
 
+            if temporal_batch_duration > 0:
+                throughput_samples.append(events_in_batch / temporal_batch_duration)
+            else:
+                throughput_samples.append(0.0) # Nessun throughput in un batch di durata zero
 
+        # 4. Applica l'analisi Batch Means ai campioni di throughput.
+        throughput_results = self.steady_state_analysis(
+            throughput_samples,
+            confidence=self.confidence_level,
+            threshold=0.2 # La soglia di autocorrelazione per i throughput samples.
+        )
 
+        if throughput_results:
+            # Aggiungiamo metadati per completezza.
+            throughput_results["total_steady_state_events"] = len(steady_state_timestamps)
+            throughput_results["total_steady_state_duration"] = total_ss_duration
 
-
-
-
+        return throughput_results

@@ -24,7 +24,7 @@ axes.grid.axis : both
 
 
 ### GRIGLIA ###
-grid.color : #cccccc # Un grigio chiaro che non distrae
+grid.color : lightgrey # Un grigio chiaro che non distrae
 grid.linestyle : --   # Stile tratteggiato, molto elegante
 grid.linewidth : 0.8  # Linee sottili
 

@@ -11,7 +11,7 @@ SIMULATION_TIME = 500     # Durata delle simulazioni a orizzonte finito (s)
 LEHMER_SEED = 123456789     # Seed per la riproducibilità
 
 # --- ANALISI A ORIZZONTE INFINITO ---
-STEADY_SIMULATION_TIME = 3600#30000  # Durata della simulazione lunga per l'analisi steady-state
+STEADY_SIMULATION_TIME = 4000#30000  # Durata della simulazione lunga per l'analisi steady-state
 BATCH_K = 64        # numero di batch
 BATCH_THRESHOLD = 0.2  # soglia autocorrelazione
 CONFIDENCE_LEVEL = 0.95

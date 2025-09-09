@@ -148,4 +148,3 @@ class Welford:
         self.__m_old[...] = np.nan
         self.__s_old = np.empty(self.__shape)
         self.__s_old[...] = np.nan
-
