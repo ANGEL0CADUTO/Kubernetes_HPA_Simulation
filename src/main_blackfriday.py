@@ -57,8 +57,7 @@ def main_blackfriday_analysis():
         simulator_wfq = SimulatorBlackFridayDWFQ(config, MetricsWithPriority, replication_streams['arrivals'], replication_streams['choice'], replication_streams['service'], lambda_black_friday)
         print("\n--- Esecuzione Modello 2: Dynamic Weighted Fair Queuing (DWFQ) ---")
 
-        #DISATTIVATO PER GRAFICI
-        # simulator_wfq.run(config.SIMULATION_TIME)
+        simulator_wfq.run(config.SIMULATION_TIME)
 
         # <-- MODIFICA: Salva i risultati di questa replica -->
         all_results[i] = {
