@@ -16,7 +16,7 @@ def main_blackfriday_analysis():
 
     # <-- MODIFICA: Imposta il numero di repliche che vuoi visualizzare -->
     NUM_REPLICATIONS = 5
-    config.SIMULATION_TIME = 500
+    config.SIMULATION_TIME = 5000
 
     # ... (la definizione di lambda_black_friday rimane la stessa) ...
     t_notte_fine = config.SIMULATION_TIME * 0.15
@@ -56,7 +56,9 @@ def main_blackfriday_analysis():
         # 2. Dynamic Weighted Fair Queuing (DWFQ)
         simulator_wfq = SimulatorBlackFridayDWFQ(config, MetricsWithPriority, replication_streams['arrivals'], replication_streams['choice'], replication_streams['service'], lambda_black_friday)
         print("\n--- Esecuzione Modello 2: Dynamic Weighted Fair Queuing (DWFQ) ---")
-        simulator_wfq.run(config.SIMULATION_TIME)
+
+        #DISATTIVATO PER GRAFICI
+        # simulator_wfq.run(config.SIMULATION_TIME)
 
         # <-- MODIFICA: Salva i risultati di questa replica -->
         all_results[i] = {
