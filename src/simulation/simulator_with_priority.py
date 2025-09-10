@@ -21,13 +21,13 @@ class SimulatorWithPriority:
         self.service = PodService(service_rng, config)
         self.timeouts_enabled = timeouts_enabled
 
-        # MODIFICA: Inizializza una lista per le metriche per-worker e una per l'aggregato.
+
         self.metrics_per_worker = [metrics_class(config) for _ in range(config.NUM_WORKERS)]
         self.metrics_agg = metrics_class(config) # Per metriche globali (es. HPA)
 
         self.traffic_profiler = DynamicTrafficProfiler(self.metrics_agg, config)
 
-        # NUOVO: Crea i Worker Node, ognuno con la propria coda a priorità.
+
         self.worker_nodes = []
         for i in range(self.config.NUM_WORKERS):
             priority_queue = PriorityStore(self.env)
@@ -119,7 +119,7 @@ class SimulatorWithPriority:
             request.timed_out = True
             # Registra il timeout su tutte le istanze di metriche rilevanti.
             self.metrics_agg.record_timeout(request, self.env.now)
-            # Potremmo voler registrare anche sul worker a cui era destinata, ma per ora l'aggregato è sufficiente.
+
 
     def run(self, simulation_duration: float):
         self.env.process(self.request_generator())

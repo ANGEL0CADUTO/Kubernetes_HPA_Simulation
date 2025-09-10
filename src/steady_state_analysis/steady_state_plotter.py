@@ -18,7 +18,7 @@ from scipy.stats import t
 
 class SteadyStatePlotter:
     """
-    [CLASSE REVISIONATA]
+
     Classe responsabile della generazione di grafici. Usa i risultati pre-calcolati
     per le metriche principali e può eseguire calcoli al volo per analisi secondarie/dettagliate.
     """
@@ -48,9 +48,7 @@ class SteadyStatePlotter:
         self.ci_error_bar_color = 'black'
         self.use_log_scale_infinite = use_log_scale_infinite
 
-    # ==============================================================================
-    # ORCHESTRATORE PRINCIPALE
-    # ==============================================================================
+
     def generate_steady_state_report(self, warmup: dict, response_time_results: dict, throughput_results: dict, output_dir: str = "plots/steady_state"):
         print(f"\n--- INIZIO Generazione Report Completo in '{output_dir}' ---")
         os.makedirs(output_dir, exist_ok=True)
@@ -79,9 +77,7 @@ class SteadyStatePlotter:
 
         print(f"\n--- FINE Generazione Report. Controlla la cartella '{output_dir}'. ---")
 
-    # ==============================================================================
-    # METODI DI PLOTTING (Solo quelli rilevanti per la modifica, gli altri ometterli)
-    # ==============================================================================
+
 
     def _save_plot(self, output_dir: str, filename: str, fig: plt.Figure):
         os.makedirs(output_dir, exist_ok=True)
@@ -284,7 +280,7 @@ class SteadyStatePlotter:
                 print(f"  DEBUG: Dati insufficienti per calcolare loss CI, solo {len(steady_values)} punti dopo warmup.")
                 return None
 
-            # MODIFIED: Changed k_initial_target to k_min_target
+
             b_k_rho_tuple = compute_batch_size(steady_values,k_initial_target=self.config.BATCH_K, threshold=threshold)
 
             if b_k_rho_tuple is None: # compute_batch_size returns (None, None, None)
@@ -307,7 +303,7 @@ class SteadyStatePlotter:
             if res is None:
                 return None
 
-            # Ensure mean and half_width are floats, handling potential numpy types
+
             res['mean'] = float(res['mean']) if isinstance(res['mean'], (int, float, np.number)) else np.nan
             res['half_width'] = float(res['half_width']) if isinstance(res['half_width'], (int, float, np.number)) else np.nan
             res['batch_size'] = int(res.get('batch_size', b))
@@ -336,8 +332,6 @@ class SteadyStatePlotter:
             df_loss['Half_Width'] = df_loss['Half_Width'].astype(float)
             df_loss["Scenario"] = df_loss["Scenario"].astype("category").cat.reorder_categories(list(self.scenario_colors.keys()), ordered=True)
 
-            # Conditional log scale
-            # Only apply log scale if all means are strictly positive and no NaNs
             if self.use_log_scale_infinite and (df_loss['Mean'] > 0).all() and not df_loss['Mean'].isnull().any():
                 ax.set_yscale('log')
                 min_positive_mean = df_loss['Mean'][df_loss['Mean'] > 0].min()
@@ -457,51 +451,7 @@ class SteadyStatePlotter:
         ax.legend(title='Tipo di Richiesta')
         self._save_plot(output_dir, "baseline_convergence_by_type.png", fig)
 
-    # def _plot_convergence_prio_by_type(self, output_dir: str, warmup_duration: float):
-    #     """
-    #     Genera il grafico della convergenza del tempo di risposta medio cumulativo
-    #     per ogni tipo di richiesta nello scenario con Priorità.
-    #
-    #     Args:
-    #         output_dir (str): Directory dove salvare il grafico.
-    #         warmup_duration (float): Durata del periodo di warm-up in secondi.
-    #     """
-    #     fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
-    #     for req_type in sorted(self.metrics_prio.response_times_by_req_type.keys(), key=lambda x: x.name):
-    #         response_times = self.metrics_prio.response_times_by_req_type.get(req_type, [])
-    #         timestamps = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
-    #         if response_times and len(response_times) == len(timestamps):
-    #             # Sort history by timestamp (x[0])
-    #             history = sorted(zip(timestamps, response_times), key=lambda x: x[0])
-    #             sorted_timestamps, sorted_values = zip(*history)
-    #
-    #             if any(t >= warmup_duration for t in sorted_timestamps):
-    #                 plot_data_times = list(sorted_timestamps)
-    #                 plot_data_values = list(sorted_values)
-    #
-    #                 cumulative_means = np.cumsum(plot_data_values) / np.arange(1, len(plot_data_values) + 1)
-    #
-    #                 if len(plot_data_times) > 1:
-    #                     k_val = min(3, len(plot_data_times) - 1)
-    #                     if k_val >= 1:
-    #                         x_smooth = np.linspace(min(plot_data_times), max(plot_data_times), 500)
-    #                         spl = make_interp_spline(plot_data_times, cumulative_means, k=k_val)
-    #                         y_smooth = spl(x_smooth)
-    #                         ax.plot(x_smooth, y_smooth, label=f'{req_type.name.replace("_", " ").title()} (Smoothed)',
-    #                                 color=self.request_type_colors.get(req_type), linewidth=2, linestyle=self.scenario_linestyles["Con Priorità"])
-    #                     else:
-    #                         ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
-    #                                 color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
-    #                 else:
-    #                     ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
-    #                             color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
-    #     ax.set_title('Analisi Convergenza per Tipo (Con Priorità)')
-    #     ax.set_xlabel('Tempo di Simulazione (s)')
-    #     ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
-    #     ax.axvline(x=warmup_duration, color=self.warmup_line_color, linestyle=self.warmup_line_style, linewidth=2, label=f'Fine Warm-up ({warmup_duration:.2f}s)')
-    #     ax.grid(True, which='both', alpha=0.7)
-    #     ax.legend(title='Tipo di Richiesta')
-    #     self._save_plot(output_dir, "prio_convergence_by_type.png", fig)
+
 
     def _plot_convergence_wfq_by_type(self, output_dir: str, warmup_duration: float):
         """
@@ -784,7 +734,6 @@ class SteadyStatePlotter:
                 all_waits_prio_list.extend(zip(timestamps, waits))
         all_waits_prio = sorted(all_waits_prio_list, key=lambda x: x[0]) # Sort by timestamp
 
-        # Collect all wait times with timestamps for WFQ
         all_waits_wfq_list = []
         for req_type in self.metrics_wfq.wait_times_by_req_type.keys():
             waits = self.metrics_wfq.wait_times_by_req_type.get(req_type, [])
@@ -820,7 +769,6 @@ class SteadyStatePlotter:
                 else:
                     ax_obj.plot(times, cumulative_means, color=color, label=label, linestyle='-') # Always solid
 
-                # Calculate and plot steady-state mean if enough data exists after warmup
                 steady_values = [v for t, v in sorted_waits if t >= warmup_duration]
                 if steady_values:
                     dark_color = 'gray' # Default fallback
@@ -893,7 +841,7 @@ class SteadyStatePlotter:
         priority_warmup_duration = warmup.get("priority", 0.0)
         wfq_warmup_duration = warmup.get("wfq", 0.0)
 
-        # Ensure times and pods are extracted correctly
+
         times_b, pods_b = zip(*self.metrics.pod_count_history) if self.metrics.pod_count_history else ([], [])
         self._plot_pod_history(list(times_b), list(pods_b), "Senza Priorità", output_dir, "pod_history_baseline.png", self.scenario_colors["Senza Priorità"], self.scenario_linestyles["Senza Priorità"], warmup_duration=baseline_warmup_duration)
         self._plot_pod_history(self.metrics_prio.timestamps, self.metrics_prio.pod_counts, "Con Priorità", output_dir, "pod_history_prio.png", self.scenario_colors["Con Priorità"], self.scenario_linestyles["Con Priorità"], warmup_duration=priority_warmup_duration)
@@ -964,10 +912,10 @@ class SteadyStatePlotter:
             else:
                 ax.plot(times, queue_lengths, color=color, label='Lunghezza Coda', alpha=0.7, linewidth=1.5, linestyle='-') # Always solid
 
-            # Calculate and plot steady-state mean if enough data exists after warmup
+
             steady_queue = [q for t, q in sorted_data if t >= warmup_duration]
             if steady_queue:
-                dark_color = 'gray' # Default fallback
+                dark_color = 'gray'
                 if color == self.scenario_colors["Senza Priorità"]: dark_color = '#A60628' # Darker red
                 elif color == self.scenario_colors["Con Priorità"]: dark_color = '#1E5894' # Darker blue
                 elif color == self.scenario_colors["WFQ"]: dark_color = '#2E7C2E' # Darker green
@@ -1682,7 +1630,6 @@ class SteadyStatePlotter:
         ax.set_xlim(left=0)
         ax.set_ylim(bottom=0)
 
-        # Aggiungi un testo con il risultato finale
         final_mean = cumulative_means_history[-1]
         final_ci_lower = ci_lower_history[-1]
         final_ci_upper = ci_upper_history[-1]

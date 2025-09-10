@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import t
 
-# La chiamata a compute_batch_size ora è unificata qui
+
 from src.utils.acs import batch_means, compute_batch_size, ljung_box_test
 
 
@@ -161,19 +161,11 @@ class SteadyStateAnalyzer:
         # Le differenze assolute tra elementi consecutivi della serie smoothed.
         diffs = np.abs(np.diff(smoothed))
 
-        # Soglia euristica: un decimo della deviazione standard della serie smoothed.
-        # Se le variazioni scendono sotto questa soglia, si presume stabilità.
+
         threshold_welch = std_smoothed / 10.0
 
-        # Trova gli indici dove le differenze scendono sotto la soglia.
-        valid_cutoffs = np.where(diffs < threshold_welch)[0]
 
-        # Il primo punto in cui la variazione è stabile è il candidato per il warm-up.
-        # Si aggiunge 'window - 1' per riallineare l'indice con la serie originale.
-        # Se non ci sono cutoff validi, si presume 0 (già in stato stazionario o molto variabile).
-        # L'indice da `convolve` in `valid` mode è già shiftato, il `cutoff` è direttamente l'indice
-        # approssimativo nella serie originale, ma per maggiore precisione, se si volesse l'inizio esatto
-        # della finestra, si dovrebbe fare `cutoff + (window - 1)`. Per semplicità, si usa `cutoff`.
+        valid_cutoffs = np.where(diffs < threshold_welch)[0]
         cutoff = valid_cutoffs[0] if len(valid_cutoffs) > 0 else 0
 
         # Consideriamo che un warmup di 0 indichi che non è stato trovato un punto di cutoff significativo.
@@ -205,9 +197,7 @@ class SteadyStateAnalyzer:
 
         best_t0, best_var = 0, float("inf")
 
-        # Iteriamo su possibili punti di inizio t0.
-        # Dobbiamo assicurarci che ci siano abbastanza dati dopo t0
-        # per calcolare almeno una media mobile e poi la varianza.
+
         for t0 in range(0, n - window): # Garantisce almeno `window` elementi rimanenti
             resid = x[t0:]
 
@@ -232,12 +222,10 @@ class SteadyStateAnalyzer:
 
         return best_t0
 
-    # --------------------------
-    # METODO UNIFICATO DI ANALISI BATCH MEANS
-    # --------------------------
+
     def steady_state_analysis(self, values: list[float]):
         """
-        [METODO REVISIONATO E UNIFICATO]
+
         Esegue l'intera pipeline di analisi Batch Means per una data serie di osservazioni.
         1. Cerca la configurazione ottimale (b, k) usando `compute_batch_size`.
         2. Calcola l'intervallo di confidenza usando `batch_means`.
@@ -347,9 +335,7 @@ class SteadyStateAnalyzer:
             "replications": n
         }
 
-    # --------------------------
-    # Plot dell'Intervallo di Confidenza
-    # --------------------------
+
     def plot_confidence_interval(self, results: dict, title: str, output_dir: str, filename: str):
         """
         Genera un grafico a barra di errore per visualizzare l'intervallo di confidenza.
@@ -393,9 +379,7 @@ class SteadyStateAnalyzer:
         plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches='tight')
         plt.close(fig)
 
-    # --------------------------
-    # Stampa Risultati CI
-    # --------------------------
+
     def print_ci_results(self, results: dict | None, metric_name: str):
         """
         Stampa i risultati dell'analisi dell'intervallo di confidenza.
@@ -410,7 +394,7 @@ class SteadyStateAnalyzer:
         print(f"  - Batch size: {results.get('batch_size','N/A')}, #Batch: {results.get('num_batches','N/A')}")
         if 'ljung_box_pvalue' in results:
             p = results['ljung_box_pvalue']
-            # MODIFIED: Handle None p-value explicitly
+
             if p is None:
                 print(f"  - Ljung–Box p-value: N/A (Dati insufficienti per il test)")
             else:
@@ -450,7 +434,7 @@ class SteadyStateAnalyzer:
             print(f"  WARNING(Analyzer): Durata totale dello steady-state ({total_ss_duration:.2f}s) troppo breve per il throughput. Ritorno None.")
             return None
 
-        # --- LOGICA ADATTIVA PER LA SCELTA DEL NUMERO DI CAMPIONI ---
+
         EVENTS_PER_SAMPLE = 50    # Vogliamo che ogni nostro campione rappresenti circa 50 eventi reali.
         MIN_SAMPLES = 50          # Minimo numero di campioni per un'analisi Batch Means affidabile.
         MAX_SAMPLES = 800         # Massimo per garantire performance computazionali veloci.
