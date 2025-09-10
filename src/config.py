@@ -35,7 +35,7 @@ MAX_PODS = 24               # Limite di budget/risorse GLOBALE per l'intero clus
 # --- CONFIGURAZIONE HPA (Horizontal Pod Autoscaler) ---
 # Giustificazione: Parametri standard di Kubernetes (API v2) per un HPA reattivo.
 HPA_ENABLED = True
-HPA_SYNC_PERIOD = 20       # Intervallo di polling (`--horizontal-pod-autoscaler-sync-period`).
+HPA_SYNC_PERIOD = 10    # Intervallo di polling (`--horizontal-pod-autoscaler-sync-period`).
 TARGET_QUEUE_LENGTH_PER_POD = 1 # Metrica custom per HPA: scala se ci sono più di 5 richieste in attesa per pod.
 MAX_SCALE_STEP = 4          # Kubernetes 1.18+ può aggiungere/rimuovere fino a 4 pod ogni 15s.
 SCALE_UP_COOLDOWN = 60      # Cooldown prima di un altro scale-up.
