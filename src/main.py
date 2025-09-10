@@ -67,7 +67,7 @@ def main():
                                                    MetricsWithPriority,
                                                    arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
                                                    service_rng=replication_streams['service'], lambda_function=lambda_fn)
-            simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
+            #simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
             metrics_prio = simulator_prio.metrics_agg # <-- RECUPERA LE METRICHE AGGREGATE DAL SIMULATORE
 
             # Salva i risultati di questa replica/scenario
@@ -89,14 +89,14 @@ def main():
             current_peak_end = getattr(config, 'PEAK_END_TIME', 0)
 
             single_run_plotter = Plotter(metrics_base, metrics_prio, config)
-            single_run_plotter.generate_comprehensive_report(
-                output_dir=output_folder_single_run,
-                run_prefix=f"{scenario_name}_repl{i+1}",
-                peak_start=current_peak_start,
-                peak_end=current_peak_end,
-                base_load=current_base_load,
-                peak_load=current_peak_load
-            )
+            # single_run_plotter.generate_comprehensive_report(
+            #     output_dir=output_folder_single_run,
+            #     run_prefix=f"{scenario_name}_repl{i+1}",
+            #     peak_start=current_peak_start,
+            #     peak_end=current_peak_end,
+            #     base_load=current_base_load,
+            #     peak_load=current_peak_load
+            # )
 
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE E SCENARI {'='*30}")
 
@@ -129,30 +129,39 @@ def main():
 
 def run_steady_state_experiment(rng_manager: RNGManager):
     """
-    Esegue la simulazione a orizzonte infinito per l'analisi di regime permanente.
+    [FUNZIONE REVISIONATA E CENTRALIZZATA]
+    Esegue la simulazione a orizzonte infinito, centralizza l'analisi di regime
+    e orchestra la generazione dei report grafici.
     """
     print("\n--- AVVIO ESPERIMENTO STEADY-STATE A ORIZZONTE INFINITO ---")
     output_dir = "plots/steady_state"
     os.makedirs(output_dir, exist_ok=True)
 
-    steady_lambda_fn = lambda t: 170
-    print(f"--- Tasso di arrivo (lambda) per Steady-State: {steady_lambda_fn(0)} richieste/secondo ---")
+    # --- Parametri della simulazione come discusso ---
+    simulation_duration = 20000  # 20.000 secondi
+    steady_lambda_fn = lambda t: 85  # 85 req/s
+
+    print(f"--- Configurazione: Durata={simulation_duration}s, Tasso di Arrivo={steady_lambda_fn(0)} req/s ---")
 
     steady_streams_dict, steady_rep_seed = rng_manager.get_replication_streams()
     print(f"--- La run Steady-State utilizzerà il SEED master: {steady_rep_seed} ---")
 
+    # ==========================================================================
+    # 1. ESECUZIONE DELLE SIMULAZIONI
+    # ==========================================================================
+    print("\n--- [FASE 1/3] Esecuzione delle Simulazioni Lunga Durata ---")
 
-    print("\n--- Esecuzione Scenario Baseline (Steady-State) ---")
+    print("  - Esecuzione Scenario Baseline...")
     simulator_baseline = Simulator(config, Metrics,
                                    arrival_rng=steady_streams_dict['arrivals'],
                                    choice_rng=steady_streams_dict['choice'],
                                    service_rng=steady_streams_dict['service'],
                                    lambda_function=steady_lambda_fn
                                    )
-    simulator_baseline.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    simulator_baseline.run(simulation_duration=simulation_duration)
     metrics_baseline = simulator_baseline.metrics_agg
 
-    print("\n--- Esecuzione Scenario con Priorità (Steady-State) ---")
+    print("  - Esecuzione Scenario con Priorità...")
     simulator_prio = SimulatorWithPriority(
         config, MetricsWithPriority,
         arrival_rng=steady_streams_dict['arrivals'],
@@ -160,138 +169,106 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
-    #DISATTIVATO PER GRAFICI
-    simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    simulator_prio.run(simulation_duration=simulation_duration)
     metrics_prio = simulator_prio.metrics_agg
 
-    print("\n--- Esecuzione Scenario WFQ (Steady-State) ---")
-    simulator_wfq=SimulatorWFQ(
+    print("  - Esecuzione Scenario WFQ...")
+    simulator_wfq = SimulatorWFQ(
         config, MetricsWithPriority,
         arrival_rng=steady_streams_dict['arrivals'],
         choice_rng=steady_streams_dict['choice'],
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
-
-    #DISATTIVATO PER GRAFICI
-    simulator_wfq.run(simulation_duration=config.STEADY_SIMULATION_TIME)
+    simulator_wfq.run(simulation_duration=simulation_duration)
     metrics_wfq = simulator_wfq.metrics_agg
 
-    # --- CALCOLO WARM-UP E ANALISI STEADY-STATE ---
-    print("\n--- Calcolo Warm-up e Analisi Steady-State per Tempi di Risposta e Throughput ---")
+    # ==========================================================================
+    # 2. ANALISI STATISTICA CENTRALIZZATA
+    # ==========================================================================
+    print("\n--- [FASE 2/3] Analisi Statistica Centralizzata ---")
 
-    # Inizializza gli analizzatori con i dati completi (inclusi warm-up)
+    # Inizializza gli analizzatori
     analyzer_baseline = SteadyStateAnalyzer(metrics_baseline, config)
     analyzer_prio = SteadyStateAnalyzer(metrics_prio, config)
     analyzer_wfq = SteadyStateAnalyzer(metrics_wfq, config)
 
-    # Estrai i campioni COMPLETI con i timestamp per la stima del warm-up.
-    # Useremo questi per convertire l'indice del warm-up in tempo.
-    all_response_data_baseline = analyzer_baseline.extract_full_response_data()
-    all_response_data_prio = analyzer_prio.extract_full_response_data()
-    all_response_data_wfq = analyzer_wfq.extract_full_response_data()
+    # --- Stima del Warm-up ---
+    print("  - Stima del periodo di warm-up...")
+    all_responses_base = analyzer_baseline.extract_full_response_data()
+    all_responses_prio = analyzer_prio.extract_full_response_data()
+    all_responses_wfq = analyzer_wfq.extract_full_response_data()
 
-    # Estrai i soli valori per l'analisi del warm-up (senza timestamp)
-    all_response_times_values_baseline = analyzer_baseline.extract_response_times_values()
-    all_response_times_values_prio = analyzer_prio.extract_response_times_values()
-    all_response_times_values_wfq = analyzer_wfq.extract_response_times_values()
-
-
-    # Stima la durata del warm-up per tutti gli scenari (ORA restituisce TEMPI in secondi)
-    estimated_warmup_duration_baseline = analyzer_baseline.estimate_warmup(
-        all_response_times_values_baseline, all_response_data_baseline
+    warmup_base = analyzer_baseline.estimate_warmup(
+        [v for _, v in all_responses_base], all_responses_base
     )
-    estimated_warmup_duration_prio = analyzer_prio.estimate_warmup(
-        all_response_times_values_prio, all_response_data_prio
+    warmup_prio = analyzer_prio.estimate_warmup(
+        [v for _, v in all_responses_prio], all_responses_prio
     )
-    estimated_warmup_duration_wfq = analyzer_wfq.estimate_warmup(
-        all_response_times_values_wfq, all_response_data_wfq
+    warmup_wfq = analyzer_wfq.estimate_warmup(
+        [v for _, v in all_responses_wfq], all_responses_wfq
     )
+    print(f"    - Baseline: {warmup_base:.2f}s | Priorità: {warmup_prio:.2f}s | WFQ: {warmup_wfq:.2f}s")
 
-    print(f"Warm-up stimato per Baseline: {estimated_warmup_duration_baseline:.2f} secondi.")
-    print(f"Warm-up stimato per Priorità: {estimated_warmup_duration_prio:.2f} secondi.")
-    print(f"Warm-up stimato per WFQ: {estimated_warmup_duration_wfq:.2f} secondi.")
+    # --- Preparazione Dati a Regime ---
+    samples_rt_base = [v for t, v in all_responses_base if t >= warmup_base]
+    samples_rt_prio = [v for t, v in all_responses_prio if t >= warmup_prio]
+    samples_rt_wfq = [v for t, v in all_responses_wfq if t >= warmup_wfq]
 
+    # --- Analisi Batch Means per Tempo di Risposta (UNA SOLA VOLTA!) ---
+    print("  - Calcolo CI per Tempo di Risposta...")
+    results_rt_base = analyzer_baseline.steady_state_analysis(samples_rt_base)
+    #results_rt_prio = analyzer_prio.steady_state_analysis(samples_rt_prio)
+    results_rt_wfq = analyzer_wfq.steady_state_analysis(samples_rt_wfq)
 
-    # --- Analisi dei Tempi di Risposta (Overall) ---
-    print("\n--- Esecuzione Batch Means per i Tempi di Risposta Complessivi ---")
-
-    # Estrai i campioni DOPO aver rimosso il warm-up per i valori dei tempi di risposta.
-    samples_baseline_post_warmup_values = [v for t, v in all_response_data_baseline if t >= estimated_warmup_duration_baseline]
-    samples_prio_post_warmup_values = [v for t, v in all_response_data_prio if t >= estimated_warmup_duration_prio]
-    samples_wfq_post_warmup_values = [v for t, v in all_response_data_wfq if t >= estimated_warmup_duration_wfq]
-
-    # Utilizza la funzione steady_state_analysis dell'analizzatore
-    results_rt_baseline = analyzer_baseline.steady_state_analysis(
-        samples_baseline_post_warmup_values, confidence=config.CONFIDENCE_LEVEL
-    )
-    analyzer_baseline.print_ci_results(results_rt_baseline, "Baseline Overall Response Time")
-
-    results_rt_prio = analyzer_prio.steady_state_analysis(
-        samples_prio_post_warmup_values, confidence=config.CONFIDENCE_LEVEL
-    )
-    analyzer_prio.print_ci_results(results_rt_prio, "Priority Overall Response Time")
-
-    results_rt_wfq = analyzer_wfq.steady_state_analysis(
-        samples_wfq_post_warmup_values, confidence=config.CONFIDENCE_LEVEL
-    )
+    analyzer_baseline.print_ci_results(results_rt_base, "Baseline Overall Response Time")
+    #analyzer_prio.print_ci_results(results_rt_prio, "Priority Overall Response Time")
     analyzer_wfq.print_ci_results(results_rt_wfq, "WFQ Overall Response Time")
 
+    # --- Analisi Batch Means per Throughput (UNA SOLA VOLTA!) ---
+    print("  - Calcolo CI per Throughput...")
+    timestamps_base = [t for t, _ in all_responses_base]
+    timestamps_prio = [t for t, _ in all_responses_prio]
+    timestamps_wfq = [t for t, _ in all_responses_wfq]
 
-    # --- Analisi del Throughput ---
-    print("\n--- Esecuzione Batch Means per il Throughput ---")
+    results_tp_base = analyzer_baseline.calculate_throughput_ci(timestamps_base, warmup_base)
+    results_tp_prio = analyzer_prio.calculate_throughput_ci(timestamps_prio, warmup_prio)
+    results_tp_wfq = analyzer_wfq.calculate_throughput_ci(timestamps_wfq, warmup_wfq)
 
-    # Ottieni tutti i timestamp di completamento per il calcolo del throughput
-    all_completion_timestamps_baseline = [t for t, _ in all_response_data_baseline]
-    all_completion_timestamps_prio = [t for t, _ in all_response_data_prio]
-    all_completion_timestamps_wfq = [t for t, _ in all_response_data_wfq]
+    analyzer_baseline.print_ci_results(results_tp_base, "Baseline Throughput")
+    analyzer_prio.print_ci_results(results_tp_prio, "Priority Throughput")
+    analyzer_wfq.print_ci_results(results_tp_wfq, "WFQ Throughput")
 
-    results_throughput_baseline = analyzer_baseline.calculate_throughput_ci(
-        all_completion_timestamps_baseline, estimated_warmup_duration_baseline
-    )
-    analyzer_baseline.print_ci_results(results_throughput_baseline, "Baseline Throughput")
+    # ==========================================================================
+    # 3. GENERAZIONE DEI REPORT GRAFICI
+    # ==========================================================================
+    print("\n--- [FASE 3/3] Generazione Report Grafici Steady-State ---")
 
-    results_throughput_prio = analyzer_prio.calculate_throughput_ci(
-        all_completion_timestamps_prio, estimated_warmup_duration_prio
-    )
-    analyzer_prio.print_ci_results(results_throughput_prio, "Priority Throughput")
-
-    results_throughput_wfq = analyzer_wfq.calculate_throughput_ci(
-        all_completion_timestamps_wfq, estimated_warmup_duration_wfq
-    )
-    analyzer_wfq.print_ci_results(results_throughput_wfq, "WFQ Throughput")
-
-
-    # 1. IMPOSTA LO STILE
     plt.style.use('./style/plot_style.mplstyle')
-    print("Stile 'plot_style.mplstyle' caricato per steady state.")
+    print("  - Stile 'plot_style.mplstyle' caricato.")
 
-
-    print("\n--- Generazione Report Steady-State ---")
-    # Passa i dizionari completi dei risultati per maggiore flessibilità
+    # Il Plotter riceve i dati grezzi e i risultati dell'analisi GIA' calcolati
     steady_plotter = SteadyStatePlotter(metrics_baseline, metrics_prio, metrics_wfq, config)
 
-    # MODIFIED: Rimosso gli argomenti analyzer_*
     steady_plotter.generate_steady_state_report(
+        warmup={
+            "baseline": warmup_base,
+            "priority": warmup_prio,
+            "wfq": warmup_wfq
+        },
         response_time_results={
-            "baseline": results_rt_baseline,
-            "priority": results_rt_prio,
+            "baseline": results_rt_base,
+           # "priority": results_rt_prio,
             "wfq": results_rt_wfq
         },
         throughput_results={
-            "baseline": results_throughput_baseline,
-            "priority": results_throughput_prio,
-            "wfq": results_throughput_wfq
-        },
-        warmup={
-            "baseline" : estimated_warmup_duration_baseline,
-            "priority" : estimated_warmup_duration_prio,
-            "wfq": estimated_warmup_duration_wfq
+            "baseline": results_tp_base,
+            "priority": results_tp_prio,
+            "wfq": results_tp_wfq
         },
         output_dir=output_dir
     )
     print("\n--- Fine dell'analisi Steady-State ---")
-
 
 def print_final_debug_summary(all_results: dict):
     """

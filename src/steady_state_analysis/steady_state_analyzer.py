@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import t
 
+# La chiamata a compute_batch_size ora è unificata qui
 from src.utils.acs import batch_means, compute_batch_size, ljung_box_test
 
 
@@ -37,7 +38,6 @@ class SteadyStateAnalyzer:
         self.abs_precision = getattr(config, "ABS_PRECISION", None)
         self.warmup_method = getattr(config, "WARMUP_METHOD", "MSER5")
         self.confidence_level = getattr(config, "CONFIDENCE_LEVEL", 0.95)
-
 
     def extract_response_times_values(self) -> list[float]:
         """
@@ -233,85 +233,82 @@ class SteadyStateAnalyzer:
         return best_t0
 
     # --------------------------
-    # Analisi Batch Means per Steady-State
+    # METODO UNIFICATO DI ANALISI BATCH MEANS
     # --------------------------
-    def steady_state_analysis(self, values: list[float], confidence: float = 0.95, threshold: float = 0.2):
+    def steady_state_analysis(self, values: list[float]):
         """
-        # REVISED: The call to `compute_batch_size` has been updated to be more robust.
-        # Instead of just an initial target, we now specify `k_min_target=40`. This instructs
-        # the algorithm to favor solutions that result in at least 40 batches, leading to a
-        # more reliable estimate of the variance of the batch means and, consequently, a more
-        # trustworthy confidence interval. This addresses the concern of obtaining too few batches (e.g., k=13).
+        [METODO REVISIONATO E UNIFICATO]
+        Esegue l'intera pipeline di analisi Batch Means per una data serie di osservazioni.
+        1. Cerca la configurazione ottimale (b, k) usando `compute_batch_size`.
+        2. Calcola l'intervallo di confidenza usando `batch_means`.
+        3. Esegue test diagnostici aggiuntivi (Ljung-Box).
+        4. Controlla il raggiungimento della precisione desiderata.
 
         Args:
-            values (list[float]): La serie di osservazioni (e.g., tempi di risposta).
-            confidence (float): Il livello di confidenza desiderato (e.g., 0.95).
-            threshold (float): La soglia per l'autocorrelazione di lag 1 per `compute_batch_size`.
+            values (list[float]): La serie di osservazioni a regime (già filtrata dal warm-up).
 
         Returns:
-            dict | None: Dizionario con media, CI, dettagli batch, p-value Ljung-Box e stato precisione,
-                         o None se i dati sono insufficienti o i batch non sono validi.
+            dict | None: Dizionario con tutti i risultati dell'analisi (media, CI, b, k, etc.),
+                         o None se l'analisi fallisce in uno degli step.
         """
-        if not values or len(values) < 20: # Richiede un numero minimo di dati per l'analisi
-            print("  DEBUG(Analyzer): Dati insufficienti per l'analisi Batch Means (min 20 richiesti), ritorno None.")
+        if not values or len(values) < self.config.BATCH_K: # Richiesta minima per avere dati
+            print(f"  DEBUG(Analyzer): Dati insufficienti ({len(values)}) per analisi Batch Means.")
             return None
 
-        # --- MODIFICA CHIAVE: Utilizziamo un target minimo per k ---
-        # Questo assicura che cerchiamo di ottenere almeno 40 batch per un'analisi robusta.
-        b, k, rho1 = compute_batch_size(values, k_initial_target=64, threshold=threshold, k_min_target=40)
+        # Step 1: Cerca (b, k) usando la logica robusta.
+        # Usiamo un target iniziale più aggressivo (più batch) per dare più spazio alla ricerca.
+        b, k, rho1 = compute_batch_size(
+            data=values,
+            k_initial_target=256, # Partiamo da un target alto
+            threshold=self.config.BATCH_THRESHOLD,
+        )
 
-        if b is None or k is None or b <= 0 or k <= 0:
-            print("  DEBUG(Analyzer): compute_batch_size non ha restituito b e k validi per Batch Means, ritorno None.")
+        if b is None or k is None:
+            print("  WARNING(Analyzer): compute_batch_size non ha trovato una configurazione (b, k) valida.")
             return None
 
-        if k < 2: # Non si può calcolare un CI con meno di 2 batch.
-            print(f"  DEBUG(Analyzer): Numero di batch insufficiente ({k}) per Batch Means. Ritorno None.")
-            return None
+        # Step 2: Calcola l'intervallo di confidenza con (b, k) trovati.
+        results = batch_means(values, b, k, self.confidence_level)
 
-        # Esegue l'analisi Batch Means per ottenere media, CI e semi-ampiezza.
-        batch_means_output = batch_means(values, b, k, confidence)
-
-        if batch_means_output is None:
+        if results is None:
             print("  WARNING(Analyzer): batch_means ha restituito None. Impossibile calcolare il CI.")
             return None
 
-        mean = batch_means_output['mean']
-        ci95 = batch_means_output['ci']
-        half_width = batch_means_output['half_width']
+        # Step 3: Esegui test diagnostici.
+        # Le medie dei batch per il test di Ljung-Box.
+        batch_means_for_test = [np.mean(values[i*b:(i+1)*b]) for i in range(k)]
 
-        batches_for_ljung_box = [np.mean(values[i*b:(i+1)*b]) for i in range(k)]
+        # Il test richiede h < n. Usiamo min(10, k-1) come lag.
+        lags = min(10, k - 1) if k > 1 else 0
+        pval = None
+        if lags > 0:
+            pval = ljung_box_test(batch_means_for_test, h=lags)
 
-        if len(batches_for_ljung_box) < 2:
-            pval = None
-            independence_ok = False
-            print("  DEBUG(Analyzer): Troppo pochi batch per il test Ljung-Box.")
-        else:
-            pval = ljung_box_test(batches_for_ljung_box, h=min(10, k-1))
-            independence_ok = (pval is not None) and (pval > self.alpha)
+        independence_ok = (pval is not None) and (pval > self.alpha)
 
+        # Step 4: Controlla la precisione.
         precision_met = True
+        mean = results['mean']
+        half_width = results['half_width']
+
         if self.abs_precision is not None and half_width > self.abs_precision:
             precision_met = False
         if self.rel_precision is not None:
             if mean != 0 and (half_width / abs(mean)) > self.rel_precision:
                 precision_met = False
-            elif mean == 0 and half_width > 0:
+            elif mean == 0 and half_width > 0: # Caso limite
                 precision_met = False
 
-        return {
-            "mean": mean,
-            "ci": ci95,
-            "half_width": half_width,
-            "batch_size": b,
-            "num_batches": k,
+        # Aggiorna il dizionario dei risultati con le informazioni aggiuntive
+        results.update({
             "ljung_box_pvalue": pval,
             "independence_ok": independence_ok,
-            "confidence_level": confidence,
-            "precision_met": precision_met
-        }
-    # --------------------------
-    # Analisi Terminating (Repliche) - Non usata direttamente per Steady-State in questo contesto
-    # --------------------------
+            "precision_met": precision_met,
+            "rho1": rho1
+        })
+
+        return results
+
     def terminating_analysis(self, replications: list[float], confidence: float = 0.95) -> dict | None:
         """
         Esegue l'analisi statistica per simulazioni terminating replicate.
@@ -490,11 +487,7 @@ class SteadyStateAnalyzer:
             throughput_samples.append(events_in_batch / temporal_batch_duration)
 
         # Applica l'analisi Batch Means standard ai campioni di throughput generati.
-        throughput_results = self.steady_state_analysis(
-            throughput_samples,
-            confidence=self.confidence_level,
-            threshold=0.2
-        )
+        throughput_results = self.steady_state_analysis(throughput_samples)
 
         if throughput_results:
             throughput_results["total_steady_state_events"] = num_steady_events

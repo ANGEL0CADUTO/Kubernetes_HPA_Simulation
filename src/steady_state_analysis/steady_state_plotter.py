@@ -14,78 +14,44 @@ from src.utils.welford import Welford
 from scipy.interpolate import make_interp_spline
 from scipy.stats import t
 
+
+
 class SteadyStatePlotter:
     """
-    Classe responsabile della generazione di grafici e report per l'analisi dello stato stazionario.
-    Visualizza i risultati della simulazione per baseline, scenari con priorità e WFQ,
-    includendo analisi di convergenza, varianza, probabilità di perdita, throughput e tempi di risposta/attesa.
+    [CLASSE REVISIONATA]
+    Classe responsabile della generazione di grafici. Usa i risultati pre-calcolati
+    per le metriche principali e può eseguire calcoli al volo per analisi secondarie/dettagliate.
     """
     def __init__(self, metrics: Metrics, metrics_prio: MetricsWithPriority, metrics_wfq: MetricsWithPriority, config, use_log_scale_infinite: bool = True):
-        """
-        Inizializza SteadyStatePlotter con i dati delle metriche e la configurazione.
-
-        Args:
-            metrics (Metrics): Oggetto Metrics per lo scenario baseline.
-            metrics_prio (MetricsWithPriority): Oggetto MetricsWithPriority per lo scenario con priorità.
-            metrics_wfq (MetricsWithPriority): Oggetto MetricsWithPriority per lo scenario WFQ.
-            config: Oggetto di configurazione della simulazione.
-            use_log_scale_infinite (bool): Se True, abilita la scala logaritmica per alcuni grafici
-                                           che potrebbero avere valori molto piccoli (es. probabilità di perdita).
-        """
         self.metrics = metrics
         self.metrics_prio = metrics_prio
         self.metrics_wfq = metrics_wfq
         self.config = config
 
-        # --- Unified Style Definitions ---
+        # --- Stili Unificati ---
         self.scenario_colors = {
-            "Senza Priorità": '#E41A1C', # Red for Baseline
-            "Con Priorità": '#377EB8',  # Blue for Priority
-            "WFQ": '#4DAF4A'         # Green for WFQ
+            "Senza Priorità": '#E41A1C', "Con Priorità": '#377EB8', "WFQ": '#4DAF4A'
         }
-        # MODIFIED: All linestyles changed to solid ('-') as per user request.
         self.scenario_linestyles = {
-            "Senza Priorità": '-',
-            "Con Priorità": '-',
-            "WFQ": '-'
+            "Senza Priorità": '-', "Con Priorità": '-', "WFQ": '-'
         }
-        self.request_type_colors = { # Keep existing for internal request type differentiation
-            RequestType.ADD_TO_CART: '#FF1493', # DeepPink
-            RequestType.ANALYTICS: '#00BFFF',   # DeepSkyBlue
-            RequestType.CHECKOUT: '#32CD32',    # LimeGreen
-            RequestType.LOGIN: '#FFD700',       # Gold
-            RequestType.NAVIGATION: '#9400D3'  # DarkViolet
+        self.request_type_colors = {
+            RequestType.ADD_TO_CART: '#FF1493', RequestType.ANALYTICS: '#00BFFF',
+            RequestType.CHECKOUT: '#32CD32', RequestType.LOGIN: '#FFD700',
+            RequestType.NAVIGATION: '#9400D3'
         }
-        # Line styles for response vs wait within a request type grid (to differentiate metrics within same scenario)
-        # These are internal differentiation, so they can remain distinct if desired, but making them solid for now.
-        self.response_line_style = '-' # Changed to solid
-        self.wait_line_style = '-'     # Changed to solid
-
-        self.warmup_line_style = ':'
-        self.warmup_line_color = 'r'  # Colore rosso
+        self.response_line_style = '-'
+        self.wait_line_style = '-'
+        self.warmup_line_style = '--'
+        self.warmup_line_color = 'r'
         self.batch_mean_marker = 'o'
         self.ci_error_bar_color = 'black'
-        # --- End Unified Style Definitions ---
-
         self.use_log_scale_infinite = use_log_scale_infinite
 
     # ==============================================================================
     # ORCHESTRATORE PRINCIPALE
     # ==============================================================================
-
     def generate_steady_state_report(self, warmup: dict, response_time_results: dict, throughput_results: dict, output_dir: str = "plots/steady_state"):
-        """
-        Orchestra la generazione di tutti i grafici e report per l'analisi dello stato stazionario.
-
-        Args:
-            warmup (dict): Dizionario contenente le durate di warm-up stimate per ogni scenario.
-                           Es: {"baseline": 100.0, "priority": 120.0, "wfq": 90.0}.
-            response_time_results (dict): Dizionario con i risultati del Batch Means per i tempi di risposta (overall).
-                                          Contiene le chiavi "baseline", "priority", "wfq", e per ciascuna un dict
-                                          con "num_batches", "mean", "ci", etc.
-            throughput_results (dict): Dizionario con i risultati del Batch Means per il throughput (overall).
-            output_dir (str): Directory dove salvare i grafici generati.
-        """
         print(f"\n--- INIZIO Generazione Report Completo in '{output_dir}' ---")
         os.makedirs(output_dir, exist_ok=True)
 
@@ -103,7 +69,10 @@ class SteadyStatePlotter:
         self.plot_convergence_analysis_overall(os.path.join(output_dir, "convergence_overall_analysis"), warmup_durations=warmup)
         self.plot_convergence_analysis_by_type(os.path.join(output_dir, "convergence_by_type_analysis"), warmup_durations=warmup)
         self.plot_variance_trend_analysis(os.path.join(output_dir, "variance_trend_analysis"), warmup_durations=warmup)
-        self.plot_batch_mean_queue_trend_analysis(warmup, response_time_results, os.path.join(output_dir, "queue_batch_means_analysis"))
+
+        # --- CHIAMATA AI NUOVI METODI DI PLOTTING BATCH MEANS ---
+        self.plot_response_time_batch_means_convergence(warmup, response_time_results, os.path.join(output_dir, "response_time_batch_means"))
+        self.plot_queue_batch_means_convergence_analysis(warmup, os.path.join(output_dir, "queue_length_batch_means"))
 
         print("\n--- [SEZIONE 4/4] Analisi Dettagliate per Tipo di Richiesta ---")
         self.plot_times_by_request_type_grid(os.path.join(output_dir, "detailed_grid_analysis"), warmup_durations=warmup)
@@ -111,24 +80,15 @@ class SteadyStatePlotter:
         print(f"\n--- FINE Generazione Report. Controlla la cartella '{output_dir}'. ---")
 
     # ==============================================================================
-    # METODI DI PLOTTING COMPLETI E CORRETTI
+    # METODI DI PLOTTING (Solo quelli rilevanti per la modifica, gli altri ometterli)
     # ==============================================================================
 
     def _save_plot(self, output_dir: str, filename: str, fig: plt.Figure):
-        """
-        Salva un grafico nella directory specificata e chiude la figura.
-
-        Args:
-            output_dir (str): Directory di destinazione.
-            filename (str): Nome del file per il grafico.
-            fig (plt.Figure): La figura Matplotlib da salvare.
-        """
         os.makedirs(output_dir, exist_ok=True)
         save_path = os.path.join(output_dir, filename)
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.close(fig)
         print(f"Grafico salvato in: {save_path}")
-
     def plot_steady_state_times_by_type(self, warmup: dict, output_dir: str):
         """
         Genera un grafico a barre di confronto per i tempi medi di risposta e attesa
@@ -497,51 +457,51 @@ class SteadyStatePlotter:
         ax.legend(title='Tipo di Richiesta')
         self._save_plot(output_dir, "baseline_convergence_by_type.png", fig)
 
-    def _plot_convergence_prio_by_type(self, output_dir: str, warmup_duration: float):
-        """
-        Genera il grafico della convergenza del tempo di risposta medio cumulativo
-        per ogni tipo di richiesta nello scenario con Priorità.
-
-        Args:
-            output_dir (str): Directory dove salvare il grafico.
-            warmup_duration (float): Durata del periodo di warm-up in secondi.
-        """
-        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
-        for req_type in sorted(self.metrics_prio.response_times_by_req_type.keys(), key=lambda x: x.name):
-            response_times = self.metrics_prio.response_times_by_req_type.get(req_type, [])
-            timestamps = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
-            if response_times and len(response_times) == len(timestamps):
-                # Sort history by timestamp (x[0])
-                history = sorted(zip(timestamps, response_times), key=lambda x: x[0])
-                sorted_timestamps, sorted_values = zip(*history)
-
-                if any(t >= warmup_duration for t in sorted_timestamps):
-                    plot_data_times = list(sorted_timestamps)
-                    plot_data_values = list(sorted_values)
-
-                    cumulative_means = np.cumsum(plot_data_values) / np.arange(1, len(plot_data_values) + 1)
-
-                    if len(plot_data_times) > 1:
-                        k_val = min(3, len(plot_data_times) - 1)
-                        if k_val >= 1:
-                            x_smooth = np.linspace(min(plot_data_times), max(plot_data_times), 500)
-                            spl = make_interp_spline(plot_data_times, cumulative_means, k=k_val)
-                            y_smooth = spl(x_smooth)
-                            ax.plot(x_smooth, y_smooth, label=f'{req_type.name.replace("_", " ").title()} (Smoothed)',
-                                    color=self.request_type_colors.get(req_type), linewidth=2, linestyle=self.scenario_linestyles["Con Priorità"])
-                        else:
-                            ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
-                                    color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
-                    else:
-                        ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
-                                color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
-        ax.set_title('Analisi Convergenza per Tipo (Con Priorità)')
-        ax.set_xlabel('Tempo di Simulazione (s)')
-        ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
-        ax.axvline(x=warmup_duration, color=self.warmup_line_color, linestyle=self.warmup_line_style, linewidth=2, label=f'Fine Warm-up ({warmup_duration:.2f}s)')
-        ax.grid(True, which='both', alpha=0.7)
-        ax.legend(title='Tipo di Richiesta')
-        self._save_plot(output_dir, "prio_convergence_by_type.png", fig)
+    # def _plot_convergence_prio_by_type(self, output_dir: str, warmup_duration: float):
+    #     """
+    #     Genera il grafico della convergenza del tempo di risposta medio cumulativo
+    #     per ogni tipo di richiesta nello scenario con Priorità.
+    #
+    #     Args:
+    #         output_dir (str): Directory dove salvare il grafico.
+    #         warmup_duration (float): Durata del periodo di warm-up in secondi.
+    #     """
+    #     fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
+    #     for req_type in sorted(self.metrics_prio.response_times_by_req_type.keys(), key=lambda x: x.name):
+    #         response_times = self.metrics_prio.response_times_by_req_type.get(req_type, [])
+    #         timestamps = self.metrics_prio.completion_timestamps_by_req_type.get(req_type, [])
+    #         if response_times and len(response_times) == len(timestamps):
+    #             # Sort history by timestamp (x[0])
+    #             history = sorted(zip(timestamps, response_times), key=lambda x: x[0])
+    #             sorted_timestamps, sorted_values = zip(*history)
+    #
+    #             if any(t >= warmup_duration for t in sorted_timestamps):
+    #                 plot_data_times = list(sorted_timestamps)
+    #                 plot_data_values = list(sorted_values)
+    #
+    #                 cumulative_means = np.cumsum(plot_data_values) / np.arange(1, len(plot_data_values) + 1)
+    #
+    #                 if len(plot_data_times) > 1:
+    #                     k_val = min(3, len(plot_data_times) - 1)
+    #                     if k_val >= 1:
+    #                         x_smooth = np.linspace(min(plot_data_times), max(plot_data_times), 500)
+    #                         spl = make_interp_spline(plot_data_times, cumulative_means, k=k_val)
+    #                         y_smooth = spl(x_smooth)
+    #                         ax.plot(x_smooth, y_smooth, label=f'{req_type.name.replace("_", " ").title()} (Smoothed)',
+    #                                 color=self.request_type_colors.get(req_type), linewidth=2, linestyle=self.scenario_linestyles["Con Priorità"])
+    #                     else:
+    #                         ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
+    #                                 color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
+    #                 else:
+    #                     ax.plot(plot_data_times, cumulative_means, label=f'{req_type.name.replace("_", " ").title()}',
+    #                             color=self.request_type_colors.get(req_type), linewidth=2, linestyle='-') # Always solid
+    #     ax.set_title('Analisi Convergenza per Tipo (Con Priorità)')
+    #     ax.set_xlabel('Tempo di Simulazione (s)')
+    #     ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
+    #     ax.axvline(x=warmup_duration, color=self.warmup_line_color, linestyle=self.warmup_line_style, linewidth=2, label=f'Fine Warm-up ({warmup_duration:.2f}s)')
+    #     ax.grid(True, which='both', alpha=0.7)
+    #     ax.legend(title='Tipo di Richiesta')
+    #     self._save_plot(output_dir, "prio_convergence_by_type.png", fig)
 
     def _plot_convergence_wfq_by_type(self, output_dir: str, warmup_duration: float):
         """
@@ -1240,143 +1200,91 @@ class SteadyStatePlotter:
 
 
     # -------------- BATCH ---------------
-    def _plot_batch_mean_queue_single(self, data: list[tuple[float, int]], scenario_name: str, warmup_duration: float, batch_size_b: int, num_batches_k: int, output_dir: str, color: str):
-        """
-        # REVISED: This method now includes a fallback mechanism for visualization purposes.
-        # It first tries to use the batch parameters (b, k) from the main response time analysis.
-        # If the queue length data is insufficient for these parameters (common in short runs),
-        # it attempts to recalculate new, plot-specific b and k directly from the available
-        # queue data. This allows a plot to be rendered for quick feedback during development,
-        # even if the simulation is not long enough for full statistical convergence.
 
-        Args:
-            data (list[tuple[float, int]]): Dati grezzi di (timestamp, lunghezza_coda).
-            scenario_name (str): Nome dello scenario.
-            warmup_duration (float): Durata del periodo di warm-up da scartare.
-            batch_size_b (int): Dimensione di ogni batch (numero di osservazioni) DALL'ANALISI PRINCIPALE.
-            num_batches_k (int): Numero di batch DALL'ANALISI PRINCIPALE.
-            output_dir (str): Directory di output.
-            color (str): Colore per la linea dei dati.
-        """
-        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained")
-        ax.set_title(f'Evoluzione Medie per Batch della Coda - {scenario_name}')
+    # ==============================================================================
+    # SEZIONE FINALE: PLOTTING BATCH MEANS (PULITA E CORRETTA)
+    # ==============================================================================
+    def _plot_batch_means_convergence_single(self, steady_values: list[float], results: dict, scenario_name: str, output_dir: str, metric_name: str, y_label: str):
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
+        ax.set_title(f'{scenario_name} - Convergenza Stima {metric_name}')
 
-        steady_values = [value for timestamp, value in data if timestamp >= warmup_duration]
+        if not results or len(steady_values) < 2:
+            ax.text(0.5, 0.5, "Dati insufficienti per l'analisi", ha='center', va='center', transform=ax.transAxes)
+            self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
+            return
 
-        b_plot, k_plot = batch_size_b, num_batches_k
-        is_valid = steady_values and b_plot > 0 and k_plot >= 2 and len(steady_values) >= b_plot * k_plot
+        b, k, confidence = results['batch_size'], results['num_batches'], results['confidence_level']
 
-        # --- SEZIONE DI FALLBACK ---
-        if not is_valid:
-            print(f"  WARNING ({scenario_name}): Parametri batch da analisi primaria (b={b_plot}, k={k_plot}) non utilizzabili per i dati della coda ({len(steady_values)} campioni).")
-            print("  INFO: Tento un ricalcolo dei parametri solo per la visualizzazione di questo grafico.")
+        if not (b > 0 and k >= 2 and len(steady_values) >= b * k):
+            ax.text(0.5, 0.5, f"Parametri batch non validi (b={b}, k={k}) per {len(steady_values)} campioni", ha='center', va='center', transform=ax.transAxes)
+            self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
+            return
 
-            # Tentiamo di ricalcolare b e k con un target meno stringente, solo per questo grafico.
-            MIN_SAMPLES_FOR_FALLBACK = 30
-            if len(steady_values) >= MIN_SAMPLES_FOR_FALLBACK:
-                b_fallback, k_fallback, _ = compute_batch_size(steady_values, k_initial_target=20, threshold=0.4)
+        batch_means_values = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
+        cumulative_means_history, ci_lower_history, ci_upper_history = [], [], []
+        batch_indices = np.arange(2, k + 1)
 
-                if b_fallback is not None and k_fallback is not None and k_fallback >= 2 and len(steady_values) >= b_fallback * k_fallback:
-                    print(f"  SUCCESS ({scenario_name}): Fallback riuscito. Uso b={b_fallback}, k={k_fallback} per il grafico.")
-                    b_plot, k_plot = b_fallback, k_fallback
-                    is_valid = True
-                else:
-                    print(f"  FAILURE ({scenario_name}): Fallback fallito. Dati della coda insufficienti anche per il ricalcolo.")
-            else:
-                print(f"  FAILURE ({scenario_name}): Non ci sono abbastanza campioni ({len(steady_values)} < {MIN_SAMPLES_FOR_FALLBACK}) per tentare un fallback.")
+        for i in batch_indices:
+            current_batch_means = batch_means_values[:i]
+            mean = np.mean(current_batch_means)
+            s2 = np.var(current_batch_means, ddof=1) if i > 1 else 0
+            dof = i - 1
+            t_val = t.ppf((1 + confidence) / 2, df=dof)
+            half_width = t_val * np.sqrt(s2 / i) if s2 > 0 else 0
+            cumulative_means_history.append(mean)
+            ci_lower_history.append(mean - half_width)
+            ci_upper_history.append(mean + half_width)
 
-        # --- SEZIONE DI PLOTTING ---
-        if is_valid:
-            total_obs_for_batches = b_plot * k_plot
-            batch_means_values = [np.mean(steady_values[i*b_plot : (i+1)*b_plot]) for i in range(k_plot)]
-            grand_mean = np.mean(batch_means_values)
+        plot_color = 'skyblue'; fill_color = 'skyblue'
+        ax.plot(batch_indices, cumulative_means_history, color=plot_color, linewidth=2, label='Media Cumulativa dei Batch')
+        ax.fill_between(batch_indices, ci_lower_history, ci_upper_history, color=fill_color, alpha=0.3, label=f'Intervallo di Confidenza al {confidence:.0%}')
 
-            batch_numbers = np.arange(1, k_plot + 1)
-            ax.plot(batch_numbers, batch_means_values, marker=self.batch_mean_marker, color=color, linestyle='-', label=f'Media del Batch ({scenario_name})')
-            ax.axhline(grand_mean, color='black', linestyle='--', linewidth=1.5, label=f'Media Globale: {grand_mean:.2f}')
+        ax.set_xlabel('Numero di Batch Inclusi nel Calcolo')
+        ax.set_ylabel(y_label)
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax.legend(); ax.set_xlim(left=0); ax.set_ylim(bottom=0)
 
-            ax.set_xlabel('Numero del Batch')
-            ax.set_ylabel('Lunghezza Media della Coda per Batch')
-            ax.legend()
-            ax.grid(True, which='both', alpha=0.6)
-            ax.set_xlim(left=0, right=k_plot + 1)
-            ax.set_ylim(bottom=0)
-        else:
-            # Mostra il messaggio di errore solo se anche il fallback è fallito.
-            ax.text(0.5, 0.5, "Dati insufficienti per l'analisi dei batch", ha='center', va='center', transform=ax.transAxes)
+        final_mean, final_ci_lower, final_ci_upper = cumulative_means_history[-1], ci_lower_history[-1], ci_upper_history[-1]
+        final_text = f"Stima Finale (k={k}):\n  - Media: {final_mean:.4f}\n  - IC: [{final_ci_lower:.4f}, {final_ci_upper:.4f}]"
+        ax.text(0.98, 0.98, final_text, transform=ax.transAxes, fontsize=10, va='top', ha='right', bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.7))
+        self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
 
-        self._save_plot(output_dir, f"queue_batch_means_trend_{scenario_name.lower().replace(' ', '_')}.png", fig)
+    def plot_response_time_batch_means_convergence(self, warmup: dict, response_time_results: dict, output_dir: str):
+        print("Generazione grafici di convergenza per stime Batch Means del Tempo di Risposta...")
+        all_responses_base = self.metrics.get_all_response_times_with_timestamps()
+        all_responses_prio = self.metrics_prio.get_all_response_times_with_timestamps()
+        all_responses_wfq = self.metrics_wfq.get_all_response_times_with_timestamps()
+        steady_values_base = [v for t, v in all_responses_base if t >= warmup.get("baseline", 0)]
+        steady_values_prio = [v for t, v in all_responses_prio if t >= warmup.get("priority", 0)]
+        steady_values_wfq = [v for t, v in all_responses_wfq if t >= warmup.get("wfq", 0)]
 
-    def plot_batch_mean_queue_trend_analysis(self, warmup: dict, response_time_results: dict, output_dir: str):
-        """
-        # REVISED: This orchestration method is updated to call the new, simpler version of
-        # _plot_batch_mean_queue_single. The comparison plot has also been simplified to
-        # directly overlay the batch mean sequences from each scenario without any smoothing,
-        # providing a direct and clear comparison of their stability and behavior across batches.
+        self._plot_batch_means_convergence_single(steady_values_base, response_time_results.get("baseline"), "Senza Priorità", output_dir, "Tempo di Risposta", "Tempo di Risposta Medio (s)")
+        self._plot_batch_means_convergence_single(steady_values_prio, response_time_results.get("priority"), "Con Priorità", output_dir, "Tempo di Risposta", "Tempo di Risposta Medio (s)")
+        self._plot_batch_means_convergence_single(steady_values_wfq, response_time_results.get("wfq"), "WFQ", output_dir, "Tempo di Risposta", "Tempo di Risposta Medio (s)")
 
-        Args:
-            warmup (dict): Dizionario con le durate di warm-up per ogni scenario.
-            response_time_results (dict): Dizionario con i risultati del Batch Means, usato per
-                                          recuperare la dimensione (b) e il numero (k) di batch.
-            output_dir (str): Directory dove salvare i grafici.
-        """
-        print("Generazione grafici di andamento per le medie dei batch della coda...")
-        baseline_warmup_duration = warmup.get("baseline", 0.0)
-        priority_warmup_duration = warmup.get("priority", 0.0)
-        wfq_warmup_duration = warmup.get("wfq", 0.0)
+    def plot_queue_batch_means_convergence_analysis(self, warmup: dict, output_dir: str):
+        print("Generazione grafici di convergenza per stime Batch Means della Lunghezza della Coda...")
 
-        # Estrai b e k dai risultati dell'analisi.
-        res_base = response_time_results.get("baseline", {})
-        res_prio = response_time_results.get("priority", {})
-        res_wfq = response_time_results.get("wfq", {})
+        # Temporary analyzer per calcoli specifici della coda
+        temp_analyzer = SteadyStateAnalyzer(self.metrics, self.config)
 
-        b_base, k_base = res_base.get("batch_size", 0), res_base.get("num_batches", 0)
-        b_prio, k_prio = res_prio.get("batch_size", 0), res_prio.get("num_batches", 0)
-        b_wfq, k_wfq = res_wfq.get("batch_size", 0), res_wfq.get("num_batches", 0)
+        # --- Baseline ---
+        queue_data_base = self.metrics.queue_length_history
+        steady_queue_base = [q for t, q in queue_data_base if t >= warmup.get("baseline", 0)]
+        results_queue_base = temp_analyzer.steady_state_analysis(steady_queue_base)
+        self._plot_batch_means_convergence_single(steady_queue_base, results_queue_base, "Senza Priorità", output_dir, "Lunghezza Coda", "Lunghezza Media Coda")
 
-        # Dati della lunghezza della coda
-        data_base = self.metrics.queue_length_history if self.metrics.queue_length_history else []
-        data_prio = list(zip(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths)) if self.metrics_prio.queue_lengths else []
-        data_wfq = list(zip(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths)) if self.metrics_wfq.queue_lengths else []
+        # --- Priority ---
+        queue_data_prio = list(zip(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths))
+        steady_queue_prio = [q for t, q in queue_data_prio if t >= warmup.get("priority", 0)]
+        results_queue_prio = temp_analyzer.steady_state_analysis(steady_queue_prio) # Riutilizziamo l'analyzer
+        self._plot_batch_means_convergence_single(steady_queue_prio, results_queue_prio, "Con Priorità", output_dir, "Lunghezza Coda", "Lunghezza Media Coda")
 
-        # Genera i grafici individuali
-        self._plot_batch_mean_queue_single(data_base, "Senza Priorità", baseline_warmup_duration, b_base, k_base, output_dir, self.scenario_colors["Senza Priorità"])
-        self._plot_batch_mean_queue_single(data_prio, "Con Priorità", priority_warmup_duration, b_prio, k_prio, output_dir, self.scenario_colors["Con Priorità"])
-        self._plot_batch_mean_queue_single(data_wfq, "WFQ", wfq_warmup_duration, b_wfq, k_wfq, output_dir, self.scenario_colors["WFQ"])
-
-        # Genera il grafico di confronto
-        print("Generazione grafico CONFRONTO andamento delle medie dei batch della coda...")
-        fig, ax = plt.subplots(figsize=(14, 7), layout="constrained")
-
-        scenarios = {
-            "Senza Priorità": (data_base, baseline_warmup_duration, b_base, k_base, self.scenario_colors["Senza Priorità"]),
-            "Con Priorità": (data_prio, priority_warmup_duration, b_prio, k_prio, self.scenario_colors["Con Priorità"]),
-            "WFQ": (data_wfq, wfq_warmup_duration, b_wfq, k_wfq, self.scenario_colors["WFQ"])
-        }
-
-        max_k = 0
-        for name, (data, warmup_d, b, k, color) in scenarios.items():
-            steady_values = [val for ts, val in data if ts >= warmup_d]
-            if not steady_values or b <= 0 or k < 2 or len(steady_values) < b * k:
-                continue
-
-            total_obs = b * k
-            batch_means_vals = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
-            batch_nums = np.arange(1, k + 1)
-            ax.plot(batch_nums, batch_means_vals, marker=self.batch_mean_marker, linestyle='-', color=color, label=name, markersize=4)
-            max_k = max(max_k, k)
-
-        ax.set_title('Confronto Evoluzione delle Medie per Batch della Coda')
-        ax.set_xlabel('Numero del Batch')
-        ax.set_ylabel('Lunghezza Media della Coda per Batch')
-        ax.legend(title='Scenario')
-        ax.grid(True, which='both', alpha=0.6)
-        if max_k > 0:
-            ax.set_xlim(left=0, right=max_k + 1)
-        ax.set_ylim(bottom=0)
-
-        self._save_plot(output_dir, "queue_batch_means_trend_comparison.png", fig)
-
+        # --- WFQ ---
+        queue_data_wfq = list(zip(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths))
+        steady_queue_wfq = [q for t, q in queue_data_wfq if t >= warmup.get("wfq", 0)]
+        results_queue_wfq = temp_analyzer.steady_state_analysis(steady_queue_wfq)
+        self._plot_batch_means_convergence_single(steady_queue_wfq, results_queue_wfq, "WFQ", output_dir, "Lunghezza Coda", "Lunghezza Media Coda")
     def plot_throughput_analysis(self, warmup: dict, output_dir: str):
         """
         Genera un grafico a barre di confronto per il throughput (per tipo di richiesta)

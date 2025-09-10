@@ -66,7 +66,8 @@ def compute_batch_size(data, k_initial_target, threshold):
         den = np.sum((batches - batches_mean)**2)
         rho1 = num / den if den > 0 else 0
 
-        if abs(rho1) < threshold:
+        # modifica
+        if abs(rho1) < threshold and current_k > 64:
             # Trovato il b ottimale. Restituisci b, il k effettivo e rho1.
             return b, current_k, rho1
 
