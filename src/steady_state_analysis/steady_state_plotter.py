@@ -11,7 +11,8 @@ from src.utils.metrics_with_priority import MetricsWithPriority
 from src.config import RequestType
 from src.steady_state_analysis.steady_state_analyzer import SteadyStateAnalyzer
 from src.utils.welford import Welford
-
+from scipy.interpolate import make_interp_spline
+from scipy.stats import t
 
 class SteadyStatePlotter:
     """
@@ -61,8 +62,8 @@ class SteadyStatePlotter:
         self.wait_line_style = '-'     # Changed to solid
 
         self.warmup_line_style = ':'
-        self.warmup_line_color = 'k' # Black
-        self.batch_mean_marker = None # Set to None to remove markers for batch means plots
+        self.warmup_line_color = 'r'  # Colore rosso
+        self.batch_mean_marker = 'o'
         self.ci_error_bar_color = 'black'
         # --- End Unified Style Definitions ---
 
@@ -588,7 +589,6 @@ class SteadyStatePlotter:
         ax.legend(title='Tipo di Richiesta')
         self._save_plot(output_dir, "wfq_convergence_by_type.png", fig)
 
-
     def plot_convergence_analysis_by_type(self, output_dir: str, warmup_durations: dict):
         """
         Genera grafici della convergenza per tipo di richiesta per ogni scenario,
@@ -1111,11 +1111,13 @@ class SteadyStatePlotter:
 
     def _plot_variance_trend(self, all_responses: list[tuple[float, float]], scenario_name: str, output_dir: str, filename: str, color: str, linestyle: str, window_size: int, warmup_duration: float):
         """
+        [METODO REVISIONATO]
         Genera un grafico della deviazione standard mobile del tempo di risposta per un singolo scenario.
-        Usa una finestra mobile per visualizzare la stabilizzazione della varianza.
+        Ora utilizza l'intera serie di dati per mostrare il comportamento sia durante il transitorio
+        che a regime, con una linea verticale che indica la fine del warm-up.
 
         Args:
-            all_responses (list[tuple[float, float]]): Lista di tuple (timestamp, tempo_risposta).
+            all_responses (list[tuple[float, float]]): Lista COMPLETA di tuple (timestamp, tempo_risposta).
             scenario_name (str): Nome dello scenario.
             output_dir (str): Directory dove salvare il grafico.
             filename (str): Nome del file del grafico.
@@ -1126,40 +1128,38 @@ class SteadyStatePlotter:
         """
         fig, ax = plt.subplots(figsize=(14, 7), layout="constrained")
 
-        # Filter data to only include post-warmup data
-        steady_data = [(t, v) for t, v in all_responses if t >= warmup_duration]
+        # NON filtriamo più i dati in anticipo. Usiamo la serie completa.
+        if len(all_responses) > window_size:
+            # Ordiniamo per sicurezza, anche se dovrebbero già esserlo
+            sorted_responses = sorted(all_responses, key=lambda x: x[0])
+            times, values = zip(*sorted_responses)
 
-        if len(steady_data) > window_size:
-            times, values = zip(*steady_data)
+            # Calcoliamo la deviazione standard mobile sull'intera serie
+            # Usiamo il metodo più efficiente di pandas.rolling per evitare loop lenti
+            series = pd.Series(values)
+            moving_std = series.rolling(window=window_size).std(ddof=1) # ddof=1 per varianza campionaria
 
-            moving_std = []
+            # Rimuoviamo i NaN iniziali dove la finestra non era piena
+            valid_indices = ~moving_std.isnull()
+            plot_times = np.array(times)[valid_indices]
+            plot_values = moving_std[valid_indices]
 
-            # Use a simpler rolling window approach with numpy for standard deviation
-            for i in range(len(values) - window_size + 1):
-                window_values = values[i : i + window_size]
-                if len(window_values) > 1: # Standard deviation requires at least 2 points
-                    moving_std.append(np.std(window_values, ddof=1)) # ddof=1 for sample standard deviation
+            if len(plot_times) > 1:
+                k_val = min(3, len(plot_times) - 1)
+                if k_val >= 1:
+                    x_smooth = np.linspace(min(plot_times), max(plot_times), 500)
+                    spl = make_interp_spline(plot_times, plot_values, k=k_val)
+                    y_smooth = spl(x_smooth)
+                    ax.plot(x_smooth, y_smooth, color=color, label='Dev. Std. Mobile (Smoothed)', alpha=0.8, linestyle=linestyle)
                 else:
-                    moving_std.append(0) # If window_size is 1, std is 0
+                    ax.plot(plot_times, plot_values, color=color, label='Dev. Std. Mobile', alpha=0.8, linestyle='-')
+            else:
+                ax.plot(plot_times, plot_values, color=color, label='Dev. Std. Mobile', alpha=0.8, linestyle='-')
 
-            if moving_std:
-                # The timestamps for the moving_std should align with the end of each window
-                plot_times = list(times[window_size - 1:])
-                if len(plot_times) > 1:
-                    k_val = min(3, len(plot_times) - 1)
-                    if k_val >= 1:
-                        x_smooth = np.linspace(min(plot_times), max(plot_times), 500)
-                        spl = make_interp_spline(plot_times, moving_std, k=k_val)
-                        y_smooth = spl(x_smooth)
-                        ax.plot(x_smooth, y_smooth, color=color, label='Dev. Std. Mobile (Smoothed)', alpha=0.8, linestyle=linestyle)
-                    else:
-                        ax.plot(plot_times, moving_std, color=color, label='Dev. Std. Mobile', alpha=0.8, linestyle='-') # Always solid
-                else: # Only one point in moving_std, plot as single point
-                    ax.plot(plot_times, moving_std, color=color, label='Dev. Std. Mobile', alpha=0.8, linestyle='-') # Always solid
-
+            # Tracciamo la linea di WARM-UP sull'intero grafico
             ax.axvline(x=warmup_duration, color=self.warmup_line_color, linestyle=self.warmup_line_style, linewidth=2.5, label=f'Fine Warm-up ({warmup_duration:.2f}s)')
         else:
-            ax.text(0.5, 0.5, f"Dati insufficienti dopo warmup (necessari > {window_size} punti)", ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.text(0.5, 0.5, f"Dati insufficienti (necessari > {window_size} punti)", ha='center', va='center', transform=ax.transAxes, fontsize=12)
 
         ax.set_title(f'Stabilizzazione Varianza ({scenario_name}) - Finestra di {window_size}')
         ax.set_xlabel('Tempo di Simulazione (s)')
@@ -1168,7 +1168,6 @@ class SteadyStatePlotter:
         ax.grid(True, which='both', alpha=0.6)
         ax.legend()
         self._save_plot(output_dir, filename, fig)
-
 
     def plot_variance_trend_analysis(self, output_dir: str, warmup_durations: dict, window_size: int = 500):
         """
@@ -1239,199 +1238,141 @@ class SteadyStatePlotter:
         ax.legend(title='Scenario')
         self._save_plot(output_dir, "variance_trend_comparison.png", fig)
 
-    def _plot_batch_mean_queue_single(self, data: list[tuple[float, int]], scenario_name: str, warmup_duration: float, num_batches_k: int, output_dir: str, color: str, linestyle: str):
+
+    # -------------- BATCH ---------------
+    def _plot_batch_mean_queue_single(self, data: list[tuple[float, int]], scenario_name: str, warmup_duration: float, batch_size_b: int, num_batches_k: int, output_dir: str, color: str):
         """
-        Genera il grafico dell'evoluzione delle medie per batch della lunghezza della coda
-        per un singolo scenario.
+        # REVISED: This method now includes a fallback mechanism for visualization purposes.
+        # It first tries to use the batch parameters (b, k) from the main response time analysis.
+        # If the queue length data is insufficient for these parameters (common in short runs),
+        # it attempts to recalculate new, plot-specific b and k directly from the available
+        # queue data. This allows a plot to be rendered for quick feedback during development,
+        # even if the simulation is not long enough for full statistical convergence.
 
         Args:
-            data (list[tuple[float, int]]): Lista di tuple (timestamp, lunghezza_coda).
+            data (list[tuple[float, int]]): Dati grezzi di (timestamp, lunghezza_coda).
             scenario_name (str): Nome dello scenario.
-            warmup_duration (float): Durata del periodo di warm-up in secondi.
-            num_batches_k (int): Numero di batch determinato dall'analisi Batch Means complessiva.
-            output_dir (str): Directory dove salvare il grafico.
-            color (str): Colore della linea.
-            linestyle (str): Stile della linea.
+            warmup_duration (float): Durata del periodo di warm-up da scartare.
+            batch_size_b (int): Dimensione di ogni batch (numero di osservazioni) DALL'ANALISI PRINCIPALE.
+            num_batches_k (int): Numero di batch DALL'ANALISI PRINCIPALE.
+            output_dir (str): Directory di output.
+            color (str): Colore per la linea dei dati.
         """
         fig, ax = plt.subplots(figsize=(14, 7), layout="constrained")
-        if not data or not (steady_data := [(t, v) for t, v in data if t >= warmup_duration]):
-            ax.text(0.5, 0.5, "Nessun dato disponibile/in steady-state", ha='center', va='center', transform=ax.transAxes, fontsize=12)
-        else:
-            # MODIFIED: Access timestamp correctly from tuple
-            # If steady_data is just one point, duration is 0, handle gracefully
-            total_duration = steady_data[-1][0] - steady_data[0][0] if len(steady_data) > 1 else 0
+        ax.set_title(f'Evoluzione Medie per Batch della Coda - {scenario_name}')
 
-            if total_duration > 0 and num_batches_k > 0:
-                batch_duration = total_duration / num_batches_k
-                batch_means_values, batch_timestamps = [], []
+        steady_values = [value for timestamp, value in data if timestamp >= warmup_duration]
 
-                # Determine initial start time for batching (first timestamp after warmup)
-                start_batching_time = steady_data[0][0]
+        b_plot, k_plot = batch_size_b, num_batches_k
+        is_valid = steady_values and b_plot > 0 and k_plot >= 2 and len(steady_values) >= b_plot * k_plot
 
-                for i in range(num_batches_k):
-                    batch_start_time = start_batching_time + i * batch_duration
-                    batch_end_time = start_batching_time + (i + 1) * batch_duration
-                    # Filter data for the current batch
-                    values_in_batch = [v for t, v in steady_data if batch_start_time <= t < batch_end_time]
+        # --- SEZIONE DI FALLBACK ---
+        if not is_valid:
+            print(f"  WARNING ({scenario_name}): Parametri batch da analisi primaria (b={b_plot}, k={k_plot}) non utilizzabili per i dati della coda ({len(steady_values)} campioni).")
+            print("  INFO: Tento un ricalcolo dei parametri solo per la visualizzazione di questo grafico.")
 
-                    if values_in_batch:
-                        batch_means_values.append(np.mean(values_in_batch))
-                        batch_timestamps.append(batch_start_time + (batch_duration / 2)) # Timestamp at the middle of the batch
-                    else:
-                        # Handle empty batches (e.g., during very sparse data or misaligned batches)
-                        # Append NaN or 0 and adjust plotting logic to skip these
-                        batch_means_values.append(np.nan)
-                        batch_timestamps.append(batch_start_time + (batch_duration / 2)) # Still add timestamp for continuity
+            # Tentiamo di ricalcolare b e k con un target meno stringente, solo per questo grafico.
+            MIN_SAMPLES_FOR_FALLBACK = 30
+            if len(steady_values) >= MIN_SAMPLES_FOR_FALLBACK:
+                b_fallback, k_fallback, _ = compute_batch_size(steady_values, k_initial_target=20, threshold=0.4)
 
-                # Filter out NaNs if any, for plotting
-                plot_batch_timestamps = [ts for ts, val in zip(batch_timestamps, batch_means_values) if not np.isnan(val)]
-                plot_batch_means_values = [val for val in batch_means_values if not np.isnan(val)]
-
-                if plot_batch_timestamps:
-                    if len(plot_batch_timestamps) > 1:
-                        k_val = min(3, len(plot_batch_timestamps) - 1)
-                        if k_val >= 1:
-                            x_smooth = np.linspace(min(plot_batch_timestamps), max(plot_batch_timestamps), 500)
-                            spl = make_interp_spline(plot_batch_timestamps, plot_batch_means_values, k=k_val)
-                            y_smooth = spl(x_smooth)
-                            ax.plot(x_smooth, y_smooth, marker=self.batch_mean_marker, linestyle=linestyle, color=color, label="Media per Batch (Smoothed)")
-                        else:
-                            ax.plot(plot_batch_timestamps, plot_batch_means_values, marker=self.batch_mean_marker, linestyle='-', color=color, label="Media per Batch") # Always solid
-                    else:
-                        ax.plot(plot_batch_timestamps, plot_batch_means_values, marker=self.batch_mean_marker, linestyle='-', color=color, label="Media per Batch") # Always solid
+                if b_fallback is not None and k_fallback is not None and k_fallback >= 2 and len(steady_values) >= b_fallback * k_fallback:
+                    print(f"  SUCCESS ({scenario_name}): Fallback riuscito. Uso b={b_fallback}, k={k_fallback} per il grafico.")
+                    b_plot, k_plot = b_fallback, k_fallback
+                    is_valid = True
+                else:
+                    print(f"  FAILURE ({scenario_name}): Fallback fallito. Dati della coda insufficienti anche per il ricalcolo.")
             else:
-                ax.text(0.5, 0.5, "Durata steady-state insufficiente o numero di batch non valido.", ha='center', va='center', transform=ax.transAxes, fontsize=12)
+                print(f"  FAILURE ({scenario_name}): Non ci sono abbastanza campioni ({len(steady_values)} < {MIN_SAMPLES_FOR_FALLBACK}) per tentare un fallback.")
 
-        ax.set_title(f'Evoluzione Medie per Batch della Coda ({scenario_name})')
-        ax.set_xlabel('Tempo di Simulazione (s)')
-        ax.set_ylabel('Lunghezza Media della Coda per Batch')
-        ax.legend()
-        ax.grid(True, which='both', alpha=0.6)
-        ax.set_xlim(left=0)
-        ax.set_ylim(bottom=0)
+        # --- SEZIONE DI PLOTTING ---
+        if is_valid:
+            total_obs_for_batches = b_plot * k_plot
+            batch_means_values = [np.mean(steady_values[i*b_plot : (i+1)*b_plot]) for i in range(k_plot)]
+            grand_mean = np.mean(batch_means_values)
+
+            batch_numbers = np.arange(1, k_plot + 1)
+            ax.plot(batch_numbers, batch_means_values, marker=self.batch_mean_marker, color=color, linestyle='-', label=f'Media del Batch ({scenario_name})')
+            ax.axhline(grand_mean, color='black', linestyle='--', linewidth=1.5, label=f'Media Globale: {grand_mean:.2f}')
+
+            ax.set_xlabel('Numero del Batch')
+            ax.set_ylabel('Lunghezza Media della Coda per Batch')
+            ax.legend()
+            ax.grid(True, which='both', alpha=0.6)
+            ax.set_xlim(left=0, right=k_plot + 1)
+            ax.set_ylim(bottom=0)
+        else:
+            # Mostra il messaggio di errore solo se anche il fallback è fallito.
+            ax.text(0.5, 0.5, "Dati insufficienti per l'analisi dei batch", ha='center', va='center', transform=ax.transAxes)
+
         self._save_plot(output_dir, f"queue_batch_means_trend_{scenario_name.lower().replace(' ', '_')}.png", fig)
 
     def plot_batch_mean_queue_trend_analysis(self, warmup: dict, response_time_results: dict, output_dir: str):
         """
-        Plotta le medie per batch della coda per ciascuno scenario (baseline, priorità, WFQ)
-        e il grafico di confronto.
+        # REVISED: This orchestration method is updated to call the new, simpler version of
+        # _plot_batch_mean_queue_single. The comparison plot has also been simplified to
+        # directly overlay the batch mean sequences from each scenario without any smoothing,
+        # providing a direct and clear comparison of their stability and behavior across batches.
 
         Args:
             warmup (dict): Dizionario con le durate di warm-up per ogni scenario.
-            response_time_results (dict): Dizionario con i risultati del Batch Means per i tempi di risposta (overall),
-                                          utilizzato per recuperare il numero ottimale di batch (k).
+            response_time_results (dict): Dizionario con i risultati del Batch Means, usato per
+                                          recuperare la dimensione (b) e il numero (k) di batch.
             output_dir (str): Directory dove salvare i grafici.
         """
+        print("Generazione grafici di andamento per le medie dei batch della coda...")
         baseline_warmup_duration = warmup.get("baseline", 0.0)
         priority_warmup_duration = warmup.get("priority", 0.0)
         wfq_warmup_duration = warmup.get("wfq", 0.0)
 
-        # Extract num_batches from the response_time_results dictionary for each scenario
-        k_base_optimal = response_time_results.get("baseline", {}).get("num_batches", 0)
-        k_prio_optimal = response_time_results.get("priority", {}).get("num_batches", 0)
-        k_wfq_optimal = response_time_results.get("wfq", {}).get("num_batches", 0)
+        # Estrai b e k dai risultati dell'analisi.
+        res_base = response_time_results.get("baseline", {})
+        res_prio = response_time_results.get("priority", {})
+        res_wfq = response_time_results.get("wfq", {})
 
-        # Base Scenario
-        # MODIFIED: Corrected data_base extraction based on Metrics.queue_length_history
+        b_base, k_base = res_base.get("batch_size", 0), res_base.get("num_batches", 0)
+        b_prio, k_prio = res_prio.get("batch_size", 0), res_prio.get("num_batches", 0)
+        b_wfq, k_wfq = res_wfq.get("batch_size", 0), res_wfq.get("num_batches", 0)
+
+        # Dati della lunghezza della coda
         data_base = self.metrics.queue_length_history if self.metrics.queue_length_history else []
-        self._plot_batch_mean_queue_single(
-            data_base,
-            "Senza Priorità",
-            baseline_warmup_duration,
-            k_base_optimal,
-            output_dir,
-            self.scenario_colors["Senza Priorità"],
-            self.scenario_linestyles["Senza Priorità"]
-        )
-
-        # Priority Scenario
         data_prio = list(zip(self.metrics_prio.timestamps, self.metrics_prio.queue_lengths)) if self.metrics_prio.queue_lengths else []
-        self._plot_batch_mean_queue_single(
-            data_prio,
-            "Con Priorità",
-            priority_warmup_duration,
-            k_prio_optimal,
-            output_dir,
-            self.scenario_colors["Con Priorità"],
-            self.scenario_linestyles["Con Priorità"]
-        )
-
-        # WFQ Scenario
         data_wfq = list(zip(self.metrics_wfq.timestamps, self.metrics_wfq.queue_lengths)) if self.metrics_wfq.queue_lengths else []
-        self._plot_batch_mean_queue_single(
-            data_wfq,
-            "WFQ",
-            wfq_warmup_duration,
-            k_wfq_optimal,
-            output_dir,
-            self.scenario_colors["WFQ"],
-            self.scenario_linestyles["WFQ"]
-        )
 
-        print("Generazione grafico CONFRONTO trend delle medie dei batch della coda...")
+        # Genera i grafici individuali
+        self._plot_batch_mean_queue_single(data_base, "Senza Priorità", baseline_warmup_duration, b_base, k_base, output_dir, self.scenario_colors["Senza Priorità"])
+        self._plot_batch_mean_queue_single(data_prio, "Con Priorità", priority_warmup_duration, b_prio, k_prio, output_dir, self.scenario_colors["Con Priorità"])
+        self._plot_batch_mean_queue_single(data_wfq, "WFQ", wfq_warmup_duration, b_wfq, k_wfq, output_dir, self.scenario_colors["WFQ"])
 
+        # Genera il grafico di confronto
+        print("Generazione grafico CONFRONTO andamento delle medie dei batch della coda...")
         fig, ax = plt.subplots(figsize=(14, 7), layout="constrained")
+
         scenarios = {
-            "Senza Priorità": (data_base, baseline_warmup_duration, k_base_optimal, self.scenario_colors["Senza Priorità"], self.scenario_linestyles["Senza Priorità"]),
-            "Con Priorità": (data_prio, priority_warmup_duration, k_prio_optimal, self.scenario_colors["Con Priorità"], self.scenario_linestyles["Con Priorità"]),
-            "WFQ": (data_wfq, wfq_warmup_duration, k_wfq_optimal, self.scenario_colors["WFQ"], self.scenario_linestyles["WFQ"])
+            "Senza Priorità": (data_base, baseline_warmup_duration, b_base, k_base, self.scenario_colors["Senza Priorità"]),
+            "Con Priorità": (data_prio, priority_warmup_duration, b_prio, k_prio, self.scenario_colors["Con Priorità"]),
+            "WFQ": (data_wfq, wfq_warmup_duration, b_wfq, k_wfq, self.scenario_colors["WFQ"])
         }
 
-        for scenario_name, (data, scenario_warmup, num_batches_k, color, linestyle) in scenarios.items():
-            if not data:
+        max_k = 0
+        for name, (data, warmup_d, b, k, color) in scenarios.items():
+            steady_values = [val for ts, val in data if ts >= warmup_d]
+            if not steady_values or b <= 0 or k < 2 or len(steady_values) < b * k:
                 continue
 
-            # Filter out warmup data using timestamps
-            steady_data = [(t, v) for t, v in data if t >= scenario_warmup]
-            if not steady_data:
-                continue
-
-            # MODIFIED: Access timestamp correctly from tuple
-            # If steady_data is just one point, duration is 0, handle gracefully
-            total_duration = steady_data[-1][0] - steady_data[0][0] if len(steady_data) > 1 else 0
-
-            if total_duration <= 0 or num_batches_k <= 0:
-                continue
-
-            batch_duration = total_duration / num_batches_k
-            batch_means_values, batch_timestamps = [], []
-
-            start_batching_time = steady_data[0][0]
-
-            for i in range(num_batches_k):
-                batch_start_time = start_batching_time + i * batch_duration
-                batch_end_time = start_batching_time + (i + 1) * batch_duration
-                values_in_batch = [v for t, v in steady_data if batch_start_time <= t < batch_end_time]
-
-                if values_in_batch:
-                    batch_means_values.append(np.mean(values_in_batch))
-                    batch_timestamps.append(batch_start_time + batch_duration / 2)
-                else:
-                    batch_means_values.append(np.nan) # Append NaN for empty batches
-                    batch_timestamps.append(batch_start_time + batch_duration / 2)
-
-            plot_batch_timestamps = [ts for ts, val in zip(batch_timestamps, batch_means_values) if not np.isnan(val)]
-            plot_batch_means_values = [val for val in batch_means_values if not np.isnan(val)]
-
-            if plot_batch_timestamps:
-                if len(plot_batch_timestamps) > 1:
-                    k_val = min(3, len(plot_batch_timestamps) - 1)
-                    if k_val >= 1:
-                        x_smooth = np.linspace(min(plot_batch_timestamps), max(plot_batch_timestamps), 500)
-                        spl = make_interp_spline(plot_batch_timestamps, plot_batch_means_values, k=k_val)
-                        y_smooth = spl(x_smooth)
-                        ax.plot(x_smooth, y_smooth, marker=self.batch_mean_marker, linestyle=linestyle, color=color, label=scenario_name)
-                    else:
-                        ax.plot(plot_batch_timestamps, plot_batch_means_values, marker=self.batch_mean_marker, linestyle='-', color=color, label=scenario_name) # Always solid
-                else:
-                    ax.plot(plot_batch_timestamps, plot_batch_means_values, marker=self.batch_mean_marker, linestyle='-', color=color, label=scenario_name) # Always solid
+            total_obs = b * k
+            batch_means_vals = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
+            batch_nums = np.arange(1, k + 1)
+            ax.plot(batch_nums, batch_means_vals, marker=self.batch_mean_marker, linestyle='-', color=color, label=name, markersize=4)
+            max_k = max(max_k, k)
 
         ax.set_title('Confronto Evoluzione delle Medie per Batch della Coda')
-        ax.set_xlabel('Tempo di Simulazione (s)')
+        ax.set_xlabel('Numero del Batch')
         ax.set_ylabel('Lunghezza Media della Coda per Batch')
         ax.legend(title='Scenario')
         ax.grid(True, which='both', alpha=0.6)
-        ax.set_xlim(left=0)
+        if max_k > 0:
+            ax.set_xlim(left=0, right=max_k + 1)
         ax.set_ylim(bottom=0)
 
         self._save_plot(output_dir, "queue_batch_means_trend_comparison.png", fig)
@@ -1752,3 +1693,159 @@ class SteadyStatePlotter:
         fig.supylabel('Tempo Medio Cumulativo (s)', x=0.02)
         fig.suptitle('Confronto Dettagliato Tempi di Risposta e Attesa per Tipo di Richiesta (Steady State)', y=1.0)
         self._save_plot(output_dir, "times_grid_comparison.png", fig)
+
+    # ==============================================================================
+    # NUOVA SEZIONE: PLOTTING CONVERGENZA BATCH MEANS (STILE IMMAGINE)
+    # ==============================================================================
+    def _plot_batch_means_convergence_single(self, steady_values: list[float], results: dict, scenario_name: str, output_dir: str, metric_name: str):
+        """
+        [NUOVO METODO]
+        Genera un grafico che mostra la convergenza della media cumulativa dei batch e
+        del relativo intervallo di confidenza, come nell'immagine di esempio.
+
+        Args:
+            steady_values (list[float]): La serie di dati già filtrata dal warm-up.
+            results (dict): Il dizionario di risultati prodotto da `steady_state_analysis`.
+            scenario_name (str): Nome dello scenario per il titolo.
+            output_dir (str): Directory di output.
+            metric_name (str): Nome della metrica (es. "Tempo di Risposta").
+        """
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
+        ax.set_title(f'{scenario_name} - Convergenza Stima {metric_name}')
+
+        if not results or len(steady_values) < 2:
+            ax.text(0.5, 0.5, "Dati insufficienti per l'analisi", ha='center', va='center', transform=ax.transAxes)
+            self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
+            return
+
+        b = results['batch_size']
+        k = results['num_batches']
+        confidence = results['confidence_level']
+
+        if not (b > 0 and k >= 2 and len(steady_values) >= b * k):
+            ax.text(0.5, 0.5, f"Parametri batch non validi (b={b}, k={k}) per {len(steady_values)} campioni", ha='center', va='center', transform=ax.transAxes)
+            self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
+            return
+
+        batch_means_values = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
+
+        # Liste per storicizzare le stime cumulative
+        cumulative_means_history = []
+        ci_lower_history = []
+        ci_upper_history = []
+        # L'asse x: partiamo da 2 batch fino a k
+        batch_indices = np.arange(2, k + 1)
+
+        # Calcoliamo la media e il CI cumulativi
+        for i in batch_indices:
+            current_batch_means = batch_means_values[:i]
+            mean = np.mean(current_batch_means)
+            # Varianza campionaria (ddof=1)
+            s2 = np.var(current_batch_means, ddof=1)
+
+            # Gradi di libertà per la t-Student
+            dof = i - 1
+            # Valore critico t
+            t_val = t.ppf((1 + confidence) / 2, df=dof)
+
+            # Semi-ampiezza dell'intervallo
+            half_width = t_val * np.sqrt(s2 / i)
+
+            cumulative_means_history.append(mean)
+            ci_lower_history.append(mean - half_width)
+            ci_upper_history.append(mean + half_width)
+
+        # Colori come da richiesta
+        plot_color = 'skyblue'
+        fill_color = 'skyblue'
+
+        # Plottiamo la linea della media cumulativa
+        ax.plot(batch_indices, cumulative_means_history, color=plot_color, linewidth=2,
+                label='Media Cumulativa dei Batch')
+
+        # Plottiamo l'area di confidenza
+        ax.fill_between(batch_indices, ci_lower_history, ci_upper_history, color=fill_color, alpha=0.3,
+                        label=f'Intervallo di Confidenza al {confidence:.0%}')
+
+        ax.set_xlabel('Numero di Batch Inclusi nel Calcolo')
+        ax.set_ylabel(f'{metric_name} Medio Cumulativo (s)')
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax.legend()
+        ax.set_xlim(left=0)
+        ax.set_ylim(bottom=0)
+
+        # Aggiungi un testo con il risultato finale
+        final_mean = cumulative_means_history[-1]
+        final_ci_lower = ci_lower_history[-1]
+        final_ci_upper = ci_upper_history[-1]
+        final_text = (
+            f"Stima Finale (con k={k} batch):\n"
+            f"  - Media: {final_mean:.4f}\n"
+            f"  - IC: [{final_ci_lower:.4f}, {final_ci_upper:.4f}]"
+        )
+        ax.text(0.98, 0.98, final_text, transform=ax.transAxes, fontsize=10,
+                verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round,pad=0.5', fc='wheat', alpha=0.7))
+
+
+        self._save_plot(output_dir, f"batch_means_convergence_{scenario_name.lower().replace(' ', '_')}.png", fig)
+
+    def plot_batch_means_convergence_analysis(self, warmup: dict, response_time_results: dict, output_dir: str):
+        """
+        [METODO ORCHESTRATORE]
+        Orchestra la generazione dei grafici di convergenza del Batch Means per i tempi di risposta.
+
+        Args:
+            warmup (dict): Dizionario con le durate di warm-up.
+            response_time_results (dict): Risultati finali dell'analisi Batch Means.
+            output_dir (str): Directory di output.
+        """
+        print("Generazione grafici di convergenza per le stime Batch Means...")
+
+        all_responses_base = self.metrics.get_all_response_times_with_timestamps()
+        all_responses_prio = self.metrics_prio.get_all_response_times_with_timestamps()
+        all_responses_wfq = self.metrics_wfq.get_all_response_times_with_timestamps()
+
+        steady_values_base = [v for t, v in all_responses_base if t >= warmup.get("baseline", 0)]
+        steady_values_prio = [v for t, v in all_responses_prio if t >= warmup.get("priority", 0)]
+        steady_values_wfq = [v for t, v in all_responses_wfq if t >= warmup.get("wfq", 0)]
+
+        # Genera i grafici individuali per ogni scenario
+        self._plot_batch_means_convergence_single(steady_values_base, response_time_results.get("baseline"), "Senza Priorità", output_dir, "Tempo di Risposta")
+        self._plot_batch_means_convergence_single(steady_values_prio, response_time_results.get("priority"), "Con Priorità", output_dir, "Tempo di Risposta")
+        self._plot_batch_means_convergence_single(steady_values_wfq, response_time_results.get("wfq"), "WFQ", output_dir, "Tempo di Risposta")
+
+        # Genera il grafico di confronto delle sole linee delle medie cumulative
+        print("Generazione grafico di CONFRONTO della convergenza delle stime...")
+        fig, ax = plt.subplots(figsize=(12, 7), layout="constrained")
+        ax.set_title('Confronto Convergenza delle Stime del Tempo di Risposta Medio')
+
+        scenarios_data = {
+            "Senza Priorità": (steady_values_base, response_time_results.get("baseline"), self.scenario_colors["Senza Priorità"]),
+            "Con Priorità": (steady_values_prio, response_time_results.get("priority"), self.scenario_colors["Con Priorità"]),
+            "WFQ": (steady_values_wfq, response_time_results.get("wfq"), self.scenario_colors["WFQ"])
+        }
+
+        max_k = 0
+        for name, (values, results, color) in scenarios_data.items():
+            if not results: continue
+
+            b, k = results['batch_size'], results['num_batches']
+            if not (b > 0 and k >= 2 and len(values) >= b * k): continue
+
+            batch_means_values = [np.mean(values[i*b : (i+1)*b]) for i in range(k)]
+            batch_indices = np.arange(2, k + 1)
+            cumulative_means_history = [np.mean(batch_means_values[:i]) for i in batch_indices]
+
+            ax.plot(batch_indices, cumulative_means_history, color=color, linewidth=2, label=name)
+            max_k = max(max_k, k)
+
+        ax.set_xlabel('Numero di Batch Inclusi nel Calcolo')
+        ax.set_ylabel('Tempo di Risposta Medio Cumulativo (s)')
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+        ax.legend(title='Scenario')
+        if max_k > 0:
+            ax.set_xlim(left=0, right=max_k + 1)
+        ax.set_ylim(bottom=0)
+
+        self._save_plot(output_dir, "batch_means_convergence_comparison.png", fig)

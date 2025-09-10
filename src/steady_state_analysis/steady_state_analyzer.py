@@ -237,9 +237,11 @@ class SteadyStateAnalyzer:
     # --------------------------
     def steady_state_analysis(self, values: list[float], confidence: float = 0.95, threshold: float = 0.2):
         """
-        Esegue l'analisi Batch Means su una serie di valori per stimare la media
-        e l'intervallo di confidenza per lo stato stazionario.
-        Include un controllo sulla precisione raggiunta e sul test di indipendenza Ljung-Box.
+        # REVISED: The call to `compute_batch_size` has been updated to be more robust.
+        # Instead of just an initial target, we now specify `k_min_target=40`. This instructs
+        # the algorithm to favor solutions that result in at least 40 batches, leading to a
+        # more reliable estimate of the variance of the batch means and, consequently, a more
+        # trustworthy confidence interval. This addresses the concern of obtaining too few batches (e.g., k=13).
 
         Args:
             values (list[float]): La serie di osservazioni (e.g., tempi di risposta).
@@ -254,9 +256,9 @@ class SteadyStateAnalyzer:
             print("  DEBUG(Analyzer): Dati insufficienti per l'analisi Batch Means (min 20 richiesti), ritorno None.")
             return None
 
-        # MODIFIED: Utilizziamo k_min_target=40 per la funzione compute_batch_size.
+        # --- MODIFICA CHIAVE: Utilizziamo un target minimo per k ---
         # Questo assicura che cerchiamo di ottenere almeno 40 batch per un'analisi robusta.
-        b, k, rho1 = compute_batch_size(values,k_initial_target=64, threshold=threshold)
+        b, k, rho1 = compute_batch_size(values, k_initial_target=64, threshold=threshold, k_min_target=40)
 
         if b is None or k is None or b <= 0 or k <= 0:
             print("  DEBUG(Analyzer): compute_batch_size non ha restituito b e k validi per Batch Means, ritorno None.")
@@ -277,9 +279,6 @@ class SteadyStateAnalyzer:
         ci95 = batch_means_output['ci']
         half_width = batch_means_output['half_width']
 
-        # Esegui il test di Ljung-Box sulle medie dei batch per verificare l'indipendenza.
-        # Si assumono le medie di batch generate internamente da batch_means per il test di Ljung-Box.
-        # La funzione batch_means non restituisce le singole medie, quindi le ricalcoliamo per il test.
         batches_for_ljung_box = [np.mean(values[i*b:(i+1)*b]) for i in range(k)]
 
         if len(batches_for_ljung_box) < 2:
@@ -287,23 +286,16 @@ class SteadyStateAnalyzer:
             independence_ok = False
             print("  DEBUG(Analyzer): Troppo pochi batch per il test Ljung-Box.")
         else:
-            # h è il numero di lag da testare. Spesso si usa min(10, k-1) per non avere troppi lag
-            # rispetto al numero di osservazioni (batch).
             pval = ljung_box_test(batches_for_ljung_box, h=min(10, k-1))
             independence_ok = (pval is not None) and (pval > self.alpha)
 
-        # Verifica della precisione raggiunta.
-        # La precisione assoluta (half_width <= abs_precision) o relativa (half_width/mean <= rel_precision)
-        # è un criterio fondamentale per la validazione della simulazione.
         precision_met = True
         if self.abs_precision is not None and half_width > self.abs_precision:
             precision_met = False
-        # Per la precisione relativa, si deve gestire il caso mean == 0 per evitare divisioni per zero.
         if self.rel_precision is not None:
             if mean != 0 and (half_width / abs(mean)) > self.rel_precision:
                 precision_met = False
             elif mean == 0 and half_width > 0:
-                # Se la media è 0 e il CI non è 0, la precisione relativa non è raggiunta.
                 precision_met = False
 
         return {
@@ -317,7 +309,6 @@ class SteadyStateAnalyzer:
             "confidence_level": confidence,
             "precision_met": precision_met
         }
-
     # --------------------------
     # Analisi Terminating (Repliche) - Non usata direttamente per Steady-State in questo contesto
     # --------------------------
@@ -431,11 +422,14 @@ class SteadyStateAnalyzer:
             print(f"  - Precisione desiderata: {'RAGGIUNTA' if results['precision_met'] else 'NON RAGGIUNTA'}")
         print(f"----------------------------------------------------")
 
-
     def calculate_throughput_ci(self, completion_timestamps: list[float], warmup_period: float) -> dict | None:
         """
-        Calcola il throughput medio (eventi/sec) e il suo intervallo di confidenza
-        utilizzando il metodo Batch Means su una serie di throughput campionati in batch temporali.
+        # REVISED (ADAPTIVE LOGIC): This method now uses an adaptive approach to determine the
+        # number of throughput samples to generate, making the choice more robust than a fixed magic number.
+        # The logic is now based on the density of the original completion events. It aims to create
+        # one throughput sample for every `EVENTS_PER_SAMPLE` original events, ensuring that the
+        # granularity of the analysis adapts to the simulation's output. The number of samples is
+        # bounded (MIN/MAX_SAMPLES) to guarantee both statistical validity and computational efficiency.
 
         Args:
             completion_timestamps (list[float]): Timestamp degli eventi completati (già ordinati).
@@ -444,78 +438,66 @@ class SteadyStateAnalyzer:
         Returns:
             dict | None: Dizionario con mean, ci, half_width, ecc., o None se i dati sono insufficienti.
         """
-        # 1. Filtra i dati per rimuovere il transitorio (warm-up).
         steady_state_timestamps = [t for t in completion_timestamps if t >= warmup_period]
+        num_steady_events = len(steady_state_timestamps)
 
-        if not steady_state_timestamps or len(steady_state_timestamps) < 2:
+        if num_steady_events < 2:
             print("  WARNING(Analyzer): Meno di 2 timestamp in steady-state per calcolare il throughput. Ritorno None.")
             return None
 
-        # 2. Determina l'intervallo di tempo effettivo dello stato stazionario dopo il warm-up.
         ss_start_time = steady_state_timestamps[0]
         ss_end_time = steady_state_timestamps[-1]
         total_ss_duration = ss_end_time - ss_start_time
 
-        # Se la durata effettiva dello stato stazionario è troppo breve, non possiamo creare batch temporali significativi.
-        if total_ss_duration <= 0.1: # Minimo 0.1 secondi per avere un intervallo valido.
+        if total_ss_duration <= 0.01: # Richiede un intervallo di tempo minimo.
             print(f"  WARNING(Analyzer): Durata totale dello steady-state ({total_ss_duration:.2f}s) troppo breve per il throughput. Ritorno None.")
             return None
 
-        # 3. Genera campioni di throughput in "batch temporali".
-        # L'obiettivo è creare una serie di osservazioni di throughput (eventi/secondo)
-        # su cui poter applicare successivamente il metodo Batch Means.
-        # Desideriamo almeno `k_min_target` (40) campioni per l'input di `compute_batch_size`.
+        # --- LOGICA ADATTIVA PER LA SCELTA DEL NUMERO DI CAMPIONI ---
+        EVENTS_PER_SAMPLE = 50    # Vogliamo che ogni nostro campione rappresenti circa 50 eventi reali.
+        MIN_SAMPLES = 50          # Minimo numero di campioni per un'analisi Batch Means affidabile.
+        MAX_SAMPLES = 800         # Massimo per garantire performance computazionali veloci.
 
-        # Inizializziamo con una durata minima per batch temporale
-        min_temporal_batch_duration = 1.0 # Ogni campione di throughput rappresenta almeno 1 secondo di osservazione
+        # Calcola il numero di campioni target basato sulla densità degli eventi.
+        target_samples = int(num_steady_events / EVENTS_PER_SAMPLE)
 
-        # Calcoliamo il numero massimo di batch temporali possibili con la durata minima.
-        max_possible_temporal_batches = int(total_ss_duration / min_temporal_batch_duration)
+        # Applica i limiti (bounding).
+        num_temporal_batches = max(MIN_SAMPLES, min(target_samples, MAX_SAMPLES))
 
-        # Il numero di batch temporali effettivi sarà il massimo tra 2 (minimo per analisi) e un valore
-        # che ci dia sufficienti campioni per `compute_batch_size` (e.g., k_min_target=40).
-        num_temporal_batches = max(2, max_possible_temporal_batches)
-        if num_temporal_batches < 2:
-            print(f"  WARNING(Analyzer): Troppo pochi campioni temporali di throughput ({num_temporal_batches}) per il calcolo CI. Ritorno None.")
-            return None
+        # Se il numero di eventi originali è molto basso, potremmo non raggiungere MIN_SAMPLES.
+        # In tal caso, usiamo un numero di campioni inferiore, ma solo se è ancora ragionevole.
+        if num_steady_events < MIN_SAMPLES:
+            if num_steady_events < 10: # Se ci sono meno di 10 eventi in totale, l'analisi non ha senso.
+                print(f"  WARNING(Analyzer): Numero di eventi in steady-state ({num_steady_events}) troppo basso per l'analisi del throughput.")
+                return None
+            num_temporal_batches = num_steady_events # Usa un campione per ogni evento.
 
-        # La durata di ogni batch temporale viene calcolata in modo da dividere equamente
-        # la durata totale dello steady-state nel numero desiderato di batch.
         temporal_batch_duration = total_ss_duration / num_temporal_batches
-        if temporal_batch_duration <= 0:
-            print(f"  WARNING(Analyzer): Durata del batch temporale non valida ({temporal_batch_duration:.2f}s). Ritorno None.")
-            return None
 
         throughput_samples = []
-        current_event_idx = 0 # Indice per scorrere i timestamp in modo efficiente
+        current_event_idx = 0
 
         for i in range(num_temporal_batches):
             batch_start_time = ss_start_time + i * temporal_batch_duration
             batch_end_time = ss_start_time + (i + 1) * temporal_batch_duration
-
             events_in_batch = 0
-            # Contiamo gli eventi che cadono all'interno di questo batch temporale.
-            while current_event_idx < len(steady_state_timestamps) and \
-                    steady_state_timestamps[current_event_idx] < batch_end_time:
+
+            while current_event_idx < num_steady_events and steady_state_timestamps[current_event_idx] < batch_end_time:
                 if steady_state_timestamps[current_event_idx] >= batch_start_time:
                     events_in_batch += 1
                 current_event_idx += 1
 
-            if temporal_batch_duration > 0:
-                throughput_samples.append(events_in_batch / temporal_batch_duration)
-            else:
-                throughput_samples.append(0.0) # Nessun throughput in un batch di durata zero
+            throughput_samples.append(events_in_batch / temporal_batch_duration)
 
-        # 4. Applica l'analisi Batch Means ai campioni di throughput.
+        # Applica l'analisi Batch Means standard ai campioni di throughput generati.
         throughput_results = self.steady_state_analysis(
             throughput_samples,
             confidence=self.confidence_level,
-            threshold=0.2 # La soglia di autocorrelazione per i throughput samples.
+            threshold=0.2
         )
 
         if throughput_results:
-            # Aggiungiamo metadati per completezza.
-            throughput_results["total_steady_state_events"] = len(steady_state_timestamps)
+            throughput_results["total_steady_state_events"] = num_steady_events
             throughput_results["total_steady_state_duration"] = total_ss_duration
 
         return throughput_results

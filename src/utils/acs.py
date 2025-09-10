@@ -2,7 +2,7 @@ import math
 import numpy as np
 from scipy.stats import t, chi2
 
-from welford import Welford
+from src.utils.welford import Welford
 
 
 # --- TEST DI INDIPENDENZA (Ljung–Box) ---

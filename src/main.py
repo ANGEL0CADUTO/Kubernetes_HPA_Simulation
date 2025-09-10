@@ -24,8 +24,8 @@ def main():
     NUM_REPLICATIONS = 2
 
     arrival_scenarios = {
-        "tasso_70": lambda t: 85,
-        "tasso_85": lambda t: 170,
+        # "tasso_85": lambda t: 85,
+        "tasso_170": lambda t: 170,
         #"tasso_100": lambda t: 255, # Temporaneamente escluso per test rapidi
     }
 
@@ -51,9 +51,9 @@ def main():
 
             # --- ESECUZIONE BASELINE ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO BASELINE (FIFO) ---")
-            # NON creare qui l'istanza delle metriche. Passa la CLASSE Metrics.
+
             simulator_base = Simulator(
-                config, Metrics, # <-- MODIFICA QUI: passa la CLASSE Metrics
+                config, Metrics,
                 arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
                 service_rng=replication_streams['service'], lambda_function=lambda_fn
             )
@@ -62,9 +62,9 @@ def main():
 
             # --- ESECUZIONE MIGLIORATA ---
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO MIGLIORATO (PRIORITY) ---")
-            # NON creare qui l'istanza delle metriche. Passa la CLASSE MetricsWithPriority.
+
             simulator_prio = SimulatorWithPriority(config,
-                                                   MetricsWithPriority, # <-- MODIFICA QUI: passa la CLASSE MetricsWithPriority
+                                                   MetricsWithPriority,
                                                    arrival_rng=replication_streams['arrivals'], choice_rng=replication_streams['choice'],
                                                    service_rng=replication_streams['service'], lambda_function=lambda_fn)
             simulator_prio.run(simulation_duration=config.SIMULATION_TIME)
@@ -82,13 +82,12 @@ def main():
             output_folder_single_run = f"output/single_run_plots/{scenario_name}/replica_{i+1}"
 
             # Determina i parametri di carico per questa specifica run (scenario)
-            current_base_load = lambda_fn(0) # Valuta lambda a t=0 per ottenere il tasso costante
+            current_base_load = lambda_fn(0)
             current_peak_load = lambda_fn(0)
-            # Prendi peak_start e peak_end dalla configurazione, se esistono, altrimenti 0
+
             current_peak_start = getattr(config, 'PEAK_START_TIME', 0)
             current_peak_end = getattr(config, 'PEAK_END_TIME', 0)
 
-            # Inizializza un Plotter per questa singola run e genera il report completo
             single_run_plotter = Plotter(metrics_base, metrics_prio, config)
             single_run_plotter.generate_comprehensive_report(
                 output_dir=output_folder_single_run,
@@ -136,8 +135,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     output_dir = "plots/steady_state"
     os.makedirs(output_dir, exist_ok=True)
 
-    # USER INSTRUCTION: "metterei lambda=170 oppure 300 che sono i valori dei picchi"
-    steady_lambda_fn = lambda t: 170 # Impostato a un valore di picco come richiesto
+    steady_lambda_fn = lambda t: 170
     print(f"--- Tasso di arrivo (lambda) per Steady-State: {steady_lambda_fn(0)} richieste/secondo ---")
 
     steady_streams_dict, steady_rep_seed = rng_manager.get_replication_streams()
@@ -162,6 +160,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
+    #DISATTIVATO PER GRAFICI
     simulator_prio.run(simulation_duration=config.STEADY_SIMULATION_TIME)
     metrics_prio = simulator_prio.metrics_agg
 
@@ -173,6 +172,8 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         service_rng=steady_streams_dict['service'],
         lambda_function=steady_lambda_fn
     )
+
+    #DISATTIVATO PER GRAFICI
     simulator_wfq.run(simulation_duration=config.STEADY_SIMULATION_TIME)
     metrics_wfq = simulator_wfq.metrics_agg
 
@@ -359,8 +360,9 @@ if __name__ == "__main__":
         plt.style.use('./style/plot_style.mplstyle')
         print("Stile 'plot_style.mplstyle' caricato globalmente.")
 
+        # DISATTIVATO PERCHè SE NE OCCUPA BLACK FRIDAY
         # Chiamiamo il metodo corretto per generare i grafici delle tracce
-        final_plotter.plot_replication_traces_per_scenario(all_results)
+        # final_plotter.plot_replication_traces_per_scenario(all_results)
 
         print_final_debug_summary(all_results)
 

@@ -54,7 +54,7 @@ class LehmerRNG:
             Un dizionario dove le chiavi sono i nomi degli stream (es. 'arrivals')
             e i valori sono oggetti numpy.random.Generator pronti all'uso.
         """
-        # 1. Genera un nuovo seed ad alta entropia dal nostro Lehmer master.
+        # 1. Genera un nuovo seed dal nostro Lehmer master.
         #    Questo assicura che ogni replica usi un set di stream diverso dalle altre.
         replication_seed = self._master_rng._next_seed()
         # 2. Usa la SeedSequence di NumPy. È il modo moderno e corretto per
