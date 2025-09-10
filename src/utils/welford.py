@@ -43,7 +43,7 @@ class Welford:
     @property
     def var_s(self):
         v = self.__getvar(ddof=1)
-        if v is None: # Aggiungi un controllo esplicito per None
+        if v is None:
             return None
         # Se è un array NumPy e contiene esattamente un elemento, restituiscilo come float.
         if isinstance(v, np.ndarray) and v.size == 1:
@@ -53,7 +53,7 @@ class Welford:
     @property
     def var_p(self):
         v = self.__getvar(ddof=0)
-        if v is None: # Aggiungi un controllo esplicito per None
+        if v is None:
             return None
         # Se è un array NumPy e contiene esattamente un elemento, restituiscilo come float.
         if isinstance(v, np.ndarray) and v.size == 1:

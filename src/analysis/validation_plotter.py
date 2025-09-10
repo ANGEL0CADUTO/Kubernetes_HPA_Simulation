@@ -9,12 +9,7 @@ class ValidationPlotter:
     Verifica e Validazione del modello, come l'analisi di stabilità al variare del carico.
     """
     def __init__(self, all_metrics_data: dict, config):
-        """
-        Args:
-            all_metrics_data (dict): Un dizionario che contiene i risultati di tutte le run.
-                                     Formato: {'tasso_70': {'baseline': metrics, 'priority': metrics}, ...}
-            config: Il modulo di configurazione.
-        """
+
         self.all_metrics = all_metrics_data
         self.config = config
 
@@ -114,20 +109,20 @@ class ValidationPlotter:
                 ax_prio.set_title(f"Con Priorità - {scenario_name}")
                 ax_prio.grid(True, linestyle='--', alpha=0.6)
 
-            # Aggiungi etichette comuni
+
             axes[-1, 0].set_xlabel("Tempo di Simulazione (s)")
             axes[-1, 1].set_xlabel("Tempo di Simulazione (s)")
 
-            # Usa una scala logaritmica sull'asse Y per gestire grandi differenze di scala
+
             for ax_row in axes:
                 for ax in ax_row:
                     ax.set_yscale('log')
-                    ax.set_ylim(bottom=1) # La scala log non può iniziare da 0
+                    ax.set_ylim(bottom=1)
 
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             self._save_plot(output_dir, "instability_analysis_cumulative_loss.png", fig)
 
-    # Sostituisci il vecchio plot_cumulative_loss_analysis con questo nuovo metodo
+
 
     def plot_loss_rate_analysis(self, output_dir="output/validation"):
         """
