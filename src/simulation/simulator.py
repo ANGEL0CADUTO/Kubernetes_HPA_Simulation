@@ -19,7 +19,7 @@ class Simulator:
         self.lambda_function = lambda_function
         self.service = PodService(service_rng, config_module)
 
-        # MODIFICA FINALE: Crea sia le metriche per-worker che quelle aggregate.
+
         self.metrics_per_worker = [metrics_class(config_module) for _ in range(config_module.NUM_WORKERS)]
         self.metrics_agg = metrics_class(config_module)
 
@@ -59,7 +59,7 @@ class Simulator:
             self.next_worker_idx = (self.next_worker_idx + 1) % self.config.NUM_WORKERS
 
     def pod_worker(self, pod_id, worker: WorkerNode):
-        # MODIFICA FINALE: Ottieni l'istanza di metriche specifica per questo worker.
+
         worker_metrics = self.metrics_per_worker[worker.id]
         while True:
             try:
@@ -85,7 +85,7 @@ class Simulator:
             total_pod_count = sum(len(w.active_pods) for w in self.worker_nodes)
             self.metrics_agg.record_system_metrics(self.env.now, total_pod_count, total_queue_len)
 
-            # MODIFICA FINALE: Registra le metriche di sistema per ogni singolo worker.
+
             for worker in self.worker_nodes:
                 worker_metrics = self.metrics_per_worker[worker.id]
                 worker_metrics.record_system_metrics(self.env.now, len(worker.active_pods), len(worker.queue.items))

@@ -1,6 +1,5 @@
 import numpy as np
-# MODIFICA: Importa il config per usarlo come fallback
-from src import config as global_config
+
 from src.config import RequestType
 
 class PodService:
@@ -9,14 +8,12 @@ class PodService:
     """
     def __init__(self, service_rng: np.random.Generator, config_module):
         self.rng = service_rng
-        # MODIFICA: Salva l'intero modulo di configurazione, non solo i tempi di servizio
         self.config = config_module
 
     def get_service_time(self, req_type: RequestType) -> float:
         """
         Genera un tempo di servizio stocastico basato sul tipo di richiesta.
         """
-        # MODIFICA: Usa la configurazione passata al costruttore, non quella globale.
         service_config = self.config.SERVICE_TIME_CONFIG.get(req_type)
 
         if not service_config:

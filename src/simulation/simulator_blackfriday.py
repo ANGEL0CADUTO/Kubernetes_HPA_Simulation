@@ -1,18 +1,13 @@
-# File: src/simulation/simulator_blackfriday.py
 
-from collections import defaultdict
 import simpy
 from src.controller.hpa import HPA
 from src.model.request import Request, PriorityRequest
 from src.service.service import PodService
 from src.service.traffic_profiler import DynamicTrafficProfiler
-from src.utils.wfq_store import WFQStore
 from src.model.worker_node import WorkerNode
-# MODIFICA: Import mancante aggiunto per permettere l'ereditarietà
 from src.simulation.simulator_wfq import SimulatorWFQ
 
-# --- Simulatore per lo scenario Baseline (FIFO) ---
-# Questa classe è stata rinominata per evitare conflitti e per chiarezza
+
 class SimulatorBlackFridayBaseline:
     class _Pod:
         def __init__(self, pod_id, process): self.id = pod_id; self.process = process
@@ -70,7 +65,6 @@ class SimulatorBlackFridayBaseline:
             except simpy.Interrupt: break
 
     def metrics_recorder(self):
-        # NUOVO: Aggiungiamo un intervallo per il log e un contatore
         log_interval = 500.0  # Stampa un messaggio ogni 500s di tempo simulato
         last_log_time = -log_interval
 
@@ -82,7 +76,6 @@ class SimulatorBlackFridayBaseline:
             for worker in self.worker_nodes:
                 self.metrics_per_worker[worker.id].record_system_metrics(self.env.now, len(worker.active_pods), len(worker.queue.items))
 
-            # NUOVO: Log periodico
             if self.env.now >= last_log_time + log_interval:
                 print(f"{self.env.now:.2f} [Baseline]: In esecuzione... Coda Aggregata: {total_queue_len}, Pod Totali: {total_pod_count}")
                 last_log_time = self.env.now
