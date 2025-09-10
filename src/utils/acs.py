@@ -5,7 +5,6 @@ from scipy.stats import t, chi2
 from src.utils.welford import Welford
 
 
-# --- TEST DI INDIPENDENZA (Ljung–Box) ---
 def ljung_box_test(x, h=10):
     """
     Ljung–Box test per autocorrelazione fino al lag h.
@@ -79,7 +78,6 @@ def compute_batch_size(data, k_initial_target, threshold):
 
 # --- FUNZIONE BATCH MEANS CON WELFORD ---
 def batch_means(data, b, k, confidence=0.95):
-    # 'from .welford import Welford' is now at the top of the file.
 
     n = b * k
     data = np.asarray(data[:n])
