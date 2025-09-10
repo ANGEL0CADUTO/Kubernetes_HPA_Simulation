@@ -14,9 +14,8 @@ def main_blackfriday_analysis():
     print("ANALISI SCENARIO 'BLACK FRIDAY' (ARCHITETTURA A SILOS)")
     print("="*80)
 
-    # <-- MODIFICA: Imposta il numero di repliche che vuoi visualizzare -->
     NUM_REPLICATIONS = 5
-    config.SIMULATION_TIME = 5000
+    config.SIMULATION_TIME = 2000
 
     # ... (la definizione di lambda_black_friday rimane la stessa) ...
     t_notte_fine = config.SIMULATION_TIME * 0.15
@@ -39,7 +38,6 @@ def main_blackfriday_analysis():
 
     rng_manager = RNGManager(master_seed=config.LEHMER_SEED)
 
-    # <-- MODIFICA: Dizionario per raccogliere tutti i risultati -->
     all_results = {}
 
     for i in range(NUM_REPLICATIONS):
@@ -59,7 +57,7 @@ def main_blackfriday_analysis():
 
         simulator_wfq.run(config.SIMULATION_TIME)
 
-        # <-- MODIFICA: Salva i risultati di questa replica -->
+
         all_results[i] = {
             'baseline': simulator_base.metrics_agg,
             'wfq': simulator_wfq.metrics_agg,
@@ -68,7 +66,6 @@ def main_blackfriday_analysis():
 
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE {'='*30}")
 
-    # <-- MODIFICA: Chiama il plotter una sola volta alla fine, con tutti i risultati -->
     if all_results:
         # Inizializziamo il plotter con i dati della prima replica, solo per soddisfare il costruttore
         plotter = PlotterBlackFriday(
