@@ -10,7 +10,6 @@ from collections import defaultdict
 from src import config
 from matplotlib.ticker import MaxNLocator
 import matplotlib.ticker as mticker
-# MODIFICA: Import mancanti aggiunti per usare isinstance()
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
 from src.utils.rvms import idfStudent  # Assumiamo che rvms.py sia disponibile nell'ambiente
@@ -172,8 +171,6 @@ class PlotterBlackFriday:
                     resampled_mean = s.resample('30S').mean()
                     resampled_max = s.resample('30S').max()
 
-                    # MODIFICA: Plotta direttamente usando l'indice DatetimeIndex di Pandas.
-                    # Per l'asse X, usiamo i valori numerici dei timestamp.
                     time_values = (resampled_mean.index - pd.to_datetime(0, unit='s')).total_seconds()
                     ax1.plot(time_values, resampled_mean.values, label=f'Coda Worker {i} (Media)', color=colors[i], linewidth=2.5)
                     ax1.fill_between(time_values, resampled_mean.values, resampled_max.values, color=colors[i], alpha=0.2)
@@ -268,13 +265,10 @@ class PlotterBlackFriday:
 
 
 
-    # ==============================================================================
-    # NUOVI METODI DI PLOTTING AVANZATI
-    # ==============================================================================
 
     def _plot_latency_heatmap(self, output_dir, run_prefix):
         """
-        NUOVO: Genera una heatmap per confrontare la latenza media delle richieste HIGH
+         Genera una heatmap per confrontare la latenza media delle richieste HIGH
         su ogni worker per ogni scenario.
         """
         heatmap_data = []
@@ -312,7 +306,7 @@ class PlotterBlackFriday:
 
     def _plot_hpa_scaling_trace(self, output_dir, run_prefix):
         """
-        NUOVO: Genera un grafico a barre impilate per mostrare la distribuzione
+        Genera un grafico a barre impilate per mostrare la distribuzione
         dei pod tra i worker nel tempo.
         """
         scenarios = {
@@ -338,11 +332,10 @@ class PlotterBlackFriday:
 
             if not all_data: continue
 
-            # Concatena i dati e riempie i valori mancanti per creare una serie temporale continua
+
             combined_df = pd.concat(all_data, axis=1).ffill().fillna(0)
 
             fig, ax = plt.subplots(figsize=(20, 12))
-            # Usa il plotting integrato di Pandas per barre impilate
             combined_df.plot(kind='bar', stacked=True, ax=ax, width=1.0,
                              color=sns.color_palette("husl", n_colors=len(metrics_per_worker)))
 
@@ -350,7 +343,6 @@ class PlotterBlackFriday:
             ax.set_ylabel('Numero Totale di Pod Attivi', fontsize=12)
             ax.set_xlabel('Tempo di Simulazione (s)', fontsize=12)
 
-            # Semplifica le etichette dell'asse X per evitare sovraffollamento
             tick_labels = [item.get_text() for item in ax.get_xticklabels()]
             simplified_ticks = [label.split(' ')[1].split('.')[0] for label in tick_labels]
             ax.set_xticklabels(simplified_ticks, rotation=90)
@@ -363,7 +355,7 @@ class PlotterBlackFriday:
 
     def _plot_cumulative_loss_trace(self, output_dir, run_prefix):
         """
-        NUOVO: Mostra il numero cumulativo di richieste perse nel tempo,
+        Mostra il numero cumulativo di richieste perse nel tempo,
         distinte per priorità e scenario.
         """
         fig, ax = plt.subplots(figsize=(20, 12))
@@ -395,7 +387,6 @@ class PlotterBlackFriday:
         self._save_plot(output_dir, f"{run_prefix}_7_cumulative_loss_trace.png", fig)
 
 
-    # NUOVA FUNZIONE HELPER per calcolare la media cumulativa
     @staticmethod
     def _calculate_cumulative_average(history: list):
         """
@@ -415,7 +406,7 @@ class PlotterBlackFriday:
         return list(times), list(cumulative_avg)
 
 
-    # GRAFICI CON INTERVALLI DI CONFIDENZA (ESTIMATE)
+
 
     @staticmethod
     def _calculate_confidence_interval_from_estimate_py(sample: list, confidence: float = 0.95):
@@ -423,13 +414,6 @@ class PlotterBlackFriday:
         Calcola l'intervallo di confidenza per un campione di dati, replicando
         esattamente l'algoritmo e le formule presenti in estimate.py.
 
-        Args:
-            sample (list): Una lista di valori numerici.
-            confidence (float): Il livello di confidenza desiderato (es. 0.95).
-
-        Returns:
-            tuple: (media, limite_inferiore, limite_superiore) o (None, None, None) se
-                   il calcolo non è possibile.
         """
         n = len(sample)
         if n <= 1:
@@ -461,7 +445,7 @@ class PlotterBlackFriday:
 
     def plot_confidence_interval_trace(self, all_results: dict, lambda_func, output_dir: str, confidence=0.95):
         """
-        MODIFICATO (v2): Genera un grafico con l'intervallo di confidenza.
+         Genera un grafico con l'intervallo di confidenza.
         Lo stile è stato migliorato per massima leggibilità e qualità professionale.
         """
         print("\n--- Generazione Grafico IC (metodo estimate.py) Stile Avanzato ---")
@@ -473,10 +457,10 @@ class PlotterBlackFriday:
         time_bin_size = '30s'
 
         for model_key, model_name_display in models_to_plot.items():
-            # --- 1. Preparazione Dati ---
+            # --- 1. Raccolta Dati ---
             replication_series = []
             for i in range(num_replications):
-                # ... (logica di estrazione dati invariata)
+
                 metrics = all_results[i].get(model_key)
                 if not metrics: continue
                 if model_key == 'baseline':
@@ -503,7 +487,7 @@ class PlotterBlackFriday:
             # --- 3. Plotting ---
             fig, ax = plt.subplots(figsize=(20, 10))
 
-            # FIX 2: Font più grandi
+
             ax.set_title(f'Tempo di Risposta Medio (HIGH Prio) con Intervallo di Confidenza al {int(confidence*100)}%\n'
                          f'Modello: {model_name_display} - Basato su {num_replications} Repliche',
                          fontsize=18, fontweight='bold')
@@ -520,26 +504,26 @@ class PlotterBlackFriday:
             ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
             ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
 
-            # Stile Avanzato
+
             ax.set_xlabel("Tempo di Simulazione (s)", fontsize=16)
             ax.set_ylabel("Tempo di Risposta Medio (s)", fontsize=16)
             ax.tick_params(axis='both', which='major', labelsize=14)
             ax.set_xlim(0, sim_time)
             ax.set_ylim(bottom=0)
 
-            # FIX 1: Tick adattivi
+
             ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
             ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
 
-            # FIX 5: Griglia solo su assi primari
+
             ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
 
-            # FIX 3: Bordo del grafico più spesso
+
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
                 spine.set_edgecolor('black')
 
-            # FIX 6: Legenda migliorata
+
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
             ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',
@@ -559,7 +543,7 @@ class PlotterBlackFriday:
         s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
         return s.resample(resample_str).mean().rolling(window=window_str, min_periods=1).mean()
 
-    # Nuova funzione helper per plottare una singola traccia, stile newPlotter
+    # funzione helper per plottare una singola traccia, stile newPlotter
     @staticmethod
     def _plot_single_ma_trace(ax: plt.Axes, history: list, color: tuple, label: str):
         """
@@ -574,7 +558,7 @@ class PlotterBlackFriday:
         ax.plot(time_in_seconds, ma_series.values, color=color, label=label, linewidth=1.5, alpha=0.9)
         return ma_series.max()
 
-    # Nuova funzione helper per lo stile del subplot, stile newPlotter
+    # funzione helper per lo stile del subplot, stile newPlotter
     @staticmethod
     def _style_replication_subplot(ax: plt.Axes, title: str, y_max: float):
         """Applica uno stile standardizzato al subplot delle repliche."""
@@ -588,7 +572,7 @@ class PlotterBlackFriday:
 
     def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
         """
-        MODIFICATO (v2): Genera grafici con le tracce della MEDIA MOBILE per ogni replica.
+         Genera grafici con le tracce della MEDIA MOBILE per ogni replica.
         Lo stile è stato migliorato per massima leggibilità e qualità professionale.
         """
         print("\n--- Generazione Grafici Tracce Repliche (Media Mobile) Stile Avanzato ---")
@@ -600,11 +584,10 @@ class PlotterBlackFriday:
         for model_key, model_name_display in models_to_plot.items():
             fig, ax = plt.subplots(figsize=(20, 10))
 
-            # FIX 2: Font più grandi per il titolo
+
             fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario Black Friday',
                          fontsize=22, weight='bold')
 
-            # FIX 4: Palette di colori vibrante e ad alto contrasto
             colors = sns.color_palette("husl", n_colors=num_replications)
             max_y_val = 0
 
@@ -629,26 +612,26 @@ class PlotterBlackFriday:
             ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
             ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
 
-            # Applica Stile Avanzato
+
             ax.set_xlabel('Tempo di Simulazione (s)', fontsize=16)
             ax.set_ylabel('Tempo Risposta Medio Mobile (s)', fontsize=16)
             ax.tick_params(axis='both', which='major', labelsize=14)
             ax.set_xlim(0, sim_time)
             if max_y_val > 0: ax.set_ylim(bottom=0, top=max_y_val * 1.15)
 
-            # FIX 1: Tick adattivi
+
             ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
             ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
 
-            # FIX 5: Griglia solo su assi primari (comportamento di default di ax.grid)
+
             ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
 
-            # FIX 3: Bordo del grafico più spesso
+
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
                 spine.set_edgecolor('black')
 
-            # FIX 6: Legenda migliorata
+
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
             ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',

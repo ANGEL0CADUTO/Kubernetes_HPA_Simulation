@@ -4,7 +4,7 @@ import os
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import defaultdict # MODIFICA: Import mancante aggiunto
+from collections import defaultdict
 from src import config
 from matplotlib.ticker import MaxNLocator
 
@@ -41,9 +41,7 @@ class PlotterWFQ:
         print(f"\n--- [2/2] Generazione Dashboard Analisi Hotspot (Worker 0) per la Replica: {run_prefix} ---")
         self._plot_hotspot_analysis_dashboards(output_dir, run_prefix, peak_start, peak_end, base_load, peak_load)
 
-    # ==============================================================================
-    # SEZIONE 1: DASHBOARD AGGREGATI A LIVELLO DI CLUSTER
-    # ==============================================================================
+
 
     def _plot_cluster_aggregate_dashboards(self, output_dir, run_prefix, peak_start, peak_end, base_load, peak_load):
         self._plot_aggregated_response_time_trends(output_dir, run_prefix, peak_start, peak_end, base_load, peak_load)
@@ -65,7 +63,6 @@ class PlotterWFQ:
                 time_in_seconds = (series.index - pd.to_datetime(0, unit='s')).total_seconds()
                 ax.plot(time_in_seconds, series.values, **kwargs)
 
-        # MODIFICA CONCETTUALE: Isola le richieste HIGH anche per il Baseline per un confronto equo.
         base_history_high_only = []
         for req_type, history in self.metrics_base_agg.response_times_history.items():
             if self.config.REQUEST_TYPE_TO_PRIORITY.get(req_type) == config.Priority.HIGH:
@@ -85,7 +82,7 @@ class PlotterWFQ:
         ax1.set_title(f"Protezione QoS Aggregata (Cluster) per Priorità HIGH - {run_prefix}", fontsize=18)
         ax1.set_xlabel("Tempo (s)"); ax1.set_ylabel("Tempo Risposta Medio (s)"); ax1.grid(True); ax1.set_ylim(bottom=0, top=15.0)
 
-        # MODIFICA: Usa i dati filtrati per il Baseline e aggiorna la legenda.
+
         plot_series(ax1, base_ma_high, color='royalblue', linestyle='--', lw=2.5, label='Baseline (FIFO) - Solo HIGH')
         plot_series(ax1, prio_ma_high, color='darkred', lw=2, label='Priorità Strette - Solo HIGH')
         plot_series(ax1, wfq_ma_high, color='limegreen', lw=2, label='WFQ - Solo HIGH')
@@ -179,12 +176,10 @@ class PlotterWFQ:
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
         self._save_plot(output_dir, f"{run_prefix}_4_agg_timeout_rate.png", fig)
 
-    # ==============================================================================
-    # SEZIONE 2: DASHBOARD DI ANALISI HOTSPOT (PER-WORKER)
-    # ==============================================================================
+
 
     def _plot_hotspot_analysis_dashboards(self, output_dir, run_prefix, peak_start, peak_end, base_load, peak_load):
-        # Questa sezione rimane invariata ma ora beneficerà dei dati corretti.
+
         worker_id_to_analyze = 0
         sim_time = self.config.SIMULATION_TIME
 
@@ -222,7 +217,6 @@ class PlotterWFQ:
                 time_in_seconds = (series.index - pd.to_datetime(0, unit='s')).total_seconds()
                 ax.plot(time_in_seconds, series.values, **kwargs)
 
-        # MODIFICA: Isola le richieste HIGH anche per il baseline del worker.
         base_w0_history_high_only = []
         for req_type, history in metrics_w0_base.response_times_history.items():
             if self.config.REQUEST_TYPE_TO_PRIORITY.get(req_type) == config.Priority.HIGH:
@@ -251,7 +245,6 @@ class PlotterWFQ:
         self._save_plot(output_dir, f"{run_prefix}_6_hotspot_QoS_HIGH.png", fig2)
 
 
-    ## GRAFICO NUOVO: CODE WORKER + SOVRIMPRESSIONE POD ###
     def plot_worker_queue_evolution(
             self,
             all_results: dict,
@@ -265,18 +258,11 @@ class PlotterWFQ:
         per ogni Worker Node, evidenziando la formazione di hotspot.
         Opzionalmente, sovrappone l'andamento del numero di pod per ogni worker.
 
-        Args:
-            all_results (dict): Il dizionario completo con i risultati di tutte le simulazioni.
-            scenario_name (str): Il nome dello scenario da plottare (es. "tasso_85").
-            replica_idx (int): L'indice della replica da analizzare.
-            output_dir (str): La cartella dove salvare il grafico.
-            overlay_pods (bool): Se True, aggiunge un secondo asse Y e mostra l'evoluzione
-                                 del numero di pod per ogni worker.
         """
         print(f"Generazione grafico evoluzione code worker per '{scenario_name}', replica {replica_idx}...")
 
         # --- 1. Estrazione Dati ---
-        # Prendiamo i dati della simulazione Baseline, ma potrebbe essere parametrizzato
+
         try:
             replica_data = all_results[scenario_name][replica_idx]
             metrics_per_worker_base = replica_data['baseline'].metrics_per_worker
@@ -291,7 +277,6 @@ class PlotterWFQ:
         fig.suptitle(f'Evoluzione Code Worker (FIFO) - Scenario: {scenario_name.upper()} - Seed: {seed}',
                      fontsize=18, fontweight='bold')
 
-        # Asse Y primario (sinistra) per la lunghezza della coda
         ax1.set_xlabel('Tempo di Simulazione (s)', fontsize=14)
         ax1.set_ylabel('N. Richieste in Coda (Scala Log)', fontsize=14, color='black')
         ax1.set_yscale('log')
@@ -300,7 +285,7 @@ class PlotterWFQ:
         ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
 
         # --- 3. Plot delle Code ---
-        # Genera una palette di colori distinta per i worker
+
         colors = sns.color_palette("husl", n_colors=num_workers)
 
         for i in range(num_workers):
@@ -333,26 +318,24 @@ class PlotterWFQ:
                              linestyle=':', linewidth=2, alpha=0.8)
 
         # --- 5. Creazione Legenda Unificata e Salvataggio ---
-        # Combina le legende di entrambi gli assi in una sola
+
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = (ax2.get_legend_handles_labels() if ax2 else ([], []))
 
-        # Ordina le etichette per worker ID per una legenda più pulita
         all_labels = labels1 + labels2
         all_lines = lines1 + lines2
         sorted_legend = sorted(zip(all_labels, all_lines), key=lambda x: x[0].split(' ')[-1])
 
-        # Estrai le etichette e le linee ordinate
         if sorted_legend:
             sorted_labels, sorted_lines = zip(*sorted_legend)
             ax1.legend(sorted_lines, sorted_labels, loc='upper left', fontsize=12, title="Metriche per Worker")
 
         fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Aggiusta il layout per il titolo
 
-        # Crea la directory di output se non esiste
+
         os.makedirs(output_dir, exist_ok=True)
 
-        # Nome del file dinamico in base all'opzione di overlay
+
         filename_suffix = "pods_overlay" if overlay_pods else "queues_only"
         filename = f'worker_queues_{scenario_name}_rep{replica_idx}_{filename_suffix}.png'
         save_path = os.path.join(output_dir, filename)

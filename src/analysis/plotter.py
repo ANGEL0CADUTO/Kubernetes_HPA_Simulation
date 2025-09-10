@@ -1,20 +1,18 @@
 
 import os
-import matplotlib
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from src.utils.metrics import Metrics
-from src.utils.metrics_with_priority import MetricsWithPriority
+
 from matplotlib.ticker import MaxNLocator
 
-# Import the Welford class from the welford.py file
 from src.utils.welford import Welford
 
 
 
-# Funzione helper per calcolare le medie, AGGIORNATA PER USARE WELFORD
+# Funzione helper per calcolare le medie,
 def _calculate_overall_avg(times_by_type: dict):
     all_times = [t for times_list in times_by_type.values() for t in times_list]
     if not all_times:
@@ -141,7 +139,7 @@ class Plotter:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
         fig.suptitle("Confronto Performance: Con Priorità vs. Senza Priorità", fontsize=20, fontweight='bold')
 
-        # ... [TUTTA LA LOGICA INTERNA DEL PLOT RIMANE IDENTICA] ...
+
         ax1.set_facecolor('#f9f9f9'); ax2.set_facecolor('#f9f9f9')
         colors = {'prio': '#0000ff', 'no_prio': '#ff0000'}
 
@@ -174,12 +172,12 @@ class Plotter:
         metrics_to_compare = ['Tempo di Risposta Medio (s)', 'Tempo Attesa Medio (s)', '% Timeout']
         total_generated_prio = sum(self.metrics_prio.requests_generated_by_req_type.values())
         total_timeouts_prio = sum(self.metrics_prio.requests_timed_out_by_req_type.values())
-        # Utilizzo di _calculate_overall_avg che ora usa Welford
+
         avg_response_prio = _calculate_overall_avg(self.metrics_prio.response_times_by_req_type)
         avg_wait_prio = _calculate_overall_avg(self.metrics_prio.wait_times_by_req_type)
         timeout_perc_prio = (total_timeouts_prio / total_generated_prio) * 100 if total_generated_prio > 0 else 0
         total_timeouts_no_prio = sum(self.metrics.requests_timed_out_data.values())
-        # Utilizzo di _calculate_overall_avg che ora usa Welford
+
         avg_response_no_prio = _calculate_overall_avg(self.metrics.response_times_data)
         avg_wait_no_prio = _calculate_overall_avg(self.metrics.wait_times_data)
         timeout_perc_no_prio = (total_timeouts_no_prio / self.metrics.total_requests_generated) * 100 if self.metrics.total_requests_generated > 0 else 0
@@ -280,14 +278,14 @@ class Plotter:
 
         ax.legend(title='Scenario', title_fontproperties={'weight': 'bold'}, fontsize=12)
 
-        # --- AGGIUNTA LOGICA PER IL DELTA % ---
+
         y_max = ax.get_ylim()[1]
 
-        # Determina la posizione per le etichette del delta
+
         for i, req_name_formatted in enumerate(ax.get_xticklabels()):
             req_name_original = req_name_formatted.get_text().replace(' ', '_').upper()
 
-            # Recupera i conteggi per il tipo di richiesta corrente
+
             counts = served_counts.get(req_name_original)
             if not counts: continue
 
@@ -295,10 +293,10 @@ class Plotter:
             val_prio = counts['prio']
 
             if val_no_prio > 0:
-                # Calcola il guadagno (o perdita) percentuale
+
                 gain = ((val_prio - val_no_prio) / val_no_prio) * 100
 
-                # Un guadagno è positivo (verde), una perdita è negativa (rossa)
+
                 sign = '+' if gain >= 0 else ''
                 color = 'green' if gain >= 0 else 'red'
                 text = f'Δ: {sign}{gain:.1f}%'
@@ -326,7 +324,7 @@ class Plotter:
         self.plot_pod_history(output_dir=output_dir, filename=f"{run_prefix}_6_pod_history.png")
         self.plot_queue_history(output_dir=output_dir, filename=f"{run_prefix}_7_queue_history.png")
 
-        # Include i dashboard di analisi dinamica per questa singola run
+
         print(f"Generazione dashboard di analisi dinamica per {run_prefix} (parte del report completo)")
         self._plot_single_dynamic_analysis_dashboard(
             metrics_obj=self.metrics,
@@ -347,23 +345,23 @@ class Plotter:
         """
         print("\n--- Generazione Grafici delle Tracce delle Repliche (uno per scenario) ---")
 
-        # Ciclo principale: uno per ogni scenario (es. tasso_70, tasso_85)
+
         for scenario_name, replications in all_results.items():
 
-            # 1. Creiamo una nuova figura per questo specifico scenario
+
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(21, 12), sharex=True)
             fig.suptitle(f'Tracce delle Repliche per Scenario: "{scenario_name.upper()}"', fontsize=18)
 
-            # 2. Prepariamo i colori per le linee delle repliche
+
             colors = plt.cm.viridis(np.linspace(0, 1, num_replications))
 
-            # 3. Cicliamo sulle repliche di questo scenario per disegnarle
+
             for i in range(num_replications):
                 color = colors[i]
                 rep_data = replications.get(i)
                 if not rep_data: continue
 
-                # Prendiamo il seed di questa replica
+
                 seed = rep_data.get('seed', f'Replica {i+1}')
                 label_text = f'Seed: {seed}'
 
@@ -503,24 +501,23 @@ class Plotter:
         """
         print("\n--- Generazione Dashboard di Analisi Dinamica per Ciascuna Replica ---")
 
-        # Ensure output directory exists
+
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
         for scenario_name, replications in all_results.items():
             base_load = 0
             peak_load = 0
-            peak_start = 0 # Default values
-            peak_end = 0   # Default values
+            peak_start = 0
+            peak_end = 0
 
             if arrival_scenarios and scenario_name in arrival_scenarios:
                 lambda_fn = arrival_scenarios[scenario_name]
-                # Poiché le lambda nel main sono costanti, base_load = peak_load = valore della lambda.
+
                 test_time = 0
                 base_load = lambda_fn(test_time)
                 peak_load = lambda_fn(test_time)
-                # Se il tuo config_module ha un modo per ottenere peak_start/end per scenari specifici,
-                # potresti recuperarli qui. Es:
+
                 peak_start = getattr(self.config, f'PEAK_START_TIME', 0)
                 peak_end = getattr(self.config, f'PEAK_END_TIME', 0)
 
@@ -532,9 +529,8 @@ class Plotter:
 
                 metrics_baseline = rep_data['baseline']
                 metrics_priority = rep_data['priority']
-                seed = rep_data.get('seed', f'repl{replica_idx+1}') # Get seed if available
+                seed = rep_data.get('seed', f'repl{replica_idx+1}')
 
-                # Construct a more informative run_prefix for the filenames and titles
                 current_run_prefix = f"{scenario_name}_seed_{seed}"
 
                 self._plot_single_dynamic_analysis_dashboard(
@@ -553,23 +549,12 @@ class Plotter:
         Genera un set completo di report per tutte le repliche di simulazione,
         inclusi i grafici delle tracce di replica e i dashboard di analisi dinamica.
 
-        Args:
-            all_results (dict): Dizionario contenente i risultati di tutte le repliche e scenari.
-                                  Esempio: {'scenario_A': {0: {'seed': 123, 'baseline': Metrics, 'priority': MetricsWithPriority}}}
-            num_replications (int): Numero totale di repliche per ogni scenario.
-            arrival_scenarios (dict): Dizionario con le funzioni lambda per i tassi di arrivo per ogni scenario.
-            output_dir (str): Directory di output per i grafici.
+
         """
         print(f"\n--- Generazione Report Complessivi per Repliche in '{output_dir}' ---")
-
-        # 1. Genera i grafici delle tracce delle repliche (uno per scenario)
         self.plot_replication_traces_per_scenario(all_results, num_replications, output_dir)
-
-        # 2. Genera i dashboard di analisi dinamica per ciascuna replica
-        # I parametri di carico (base_load, peak_load) sono ora derivati all'interno di
-        # plot_dynamic_analysis_for_replications per ogni scenario.
         self.plot_dynamic_analysis_for_replications(
             all_results=all_results,
             output_dir=output_dir,
-            arrival_scenarios=arrival_scenarios # Passa il dizionario degli scenari di arrivo
+            arrival_scenarios=arrival_scenarios
         )
