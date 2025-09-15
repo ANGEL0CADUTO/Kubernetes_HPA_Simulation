@@ -1,4 +1,4 @@
-# File: analysis/plotter_wfq.py (VERSIONE REFATTORIZZATA E MIGLIORATA)
+
 
 import numpy as np
 import pandas as pd
@@ -7,7 +7,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 from src import config # Assumo che il modulo config sia importabile
 
-# Impostazione del backend e dello stile a livello di modulo
 matplotlib.use('Agg')
 plt.style.use('ggplot')
 
@@ -18,7 +17,6 @@ class PlotterWFQ:
         self.metrics_wfq = metrics_wfq
         self.config = config_module
 
-    # --- METODI HELPER PRIVATI ---
 
     def _save_plot(self, output_dir, filename, fig):
         """Salva la figura in un file, creando la cartella se non esiste."""
@@ -35,7 +33,7 @@ class PlotterWFQ:
             return pd.Series(dtype=np.float64)
         times, values = zip(*sorted(history, key=lambda x: x[0]))
         s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
-        # Ricampiona a 1s per avere una griglia regolare, poi applica la media mobile
+
         return s.resample('1s').mean().rolling(window=window_str, min_periods=1).mean()
 
     @staticmethod
@@ -59,7 +57,7 @@ class PlotterWFQ:
         ax_load.plot(load_times, load_values, color='gray', linestyle=':', lw=2, alpha=0.7, label='Carico')
         ax_load.set_ylabel("Carico (req/s)", color='gray', fontsize=14)
         ax_load.tick_params(axis='y', labelcolor='gray')
-        return ax_load # Ritorna l'asse per la gestione della legenda
+        return ax_load
 
     def _combine_and_set_legend(self, ax: plt.Axes, ax_twin: plt.Axes, loc='upper left'):
         """Combina le legende da due assi e le mostra."""
@@ -78,15 +76,14 @@ class PlotterWFQ:
         times = bins[:-1]
         return times, rate
 
-    # --- METODO PRINCIPALE PER LA GENERAZIONE DEI GRAFICI ---
+
 
     def generate_final_dashboards(self, output_dir, run_prefix, peak_start, peak_end, base_load, peak_load):
 
         sim_time = self.config.SIMULATION_TIME
         TIME_WINDOW_SEC = 10
 
-        # --- 1. CENTRALIZZAZIONE DEGLI STILI ---
-        # Definiamo colori e stili in un unico posto per coerenza
+
         styles = {
             'Baseline': {'color': 'royalblue', 'linestyle': '--', 'lw': 2.5},
             'Priorità': {'color': 'darkred', 'linestyle': '-', 'lw': 2.0},
@@ -98,7 +95,6 @@ class PlotterWFQ:
             config.Priority.LOW: 'purple'
         }
 
-        # --- 2. PREPARAZIONE DEI DATI (una sola volta all'inizio) ---
         print("\n--- Preparazione dati per i grafici finali ---")
         base_ma = self._get_time_based_moving_average(self.metrics_base.get_all_response_times_with_timestamps())
         prio_ma_data = {p: self._get_time_based_moving_average(hist) for p, hist in self.metrics_prio.response_times_history_by_prio.items()}
@@ -107,7 +103,7 @@ class PlotterWFQ:
         load_times = [0, peak_start, peak_start, peak_end, peak_end, sim_time]
         load_values = [base_load, base_load, peak_load, peak_load, base_load, base_load]
 
-        # --- 3. GENERAZIONE GRAFICI TEMPO DI RISPOSTA (Grafici 1, 2) ---
+
         print("--- Generazione grafici Tempo di Risposta ---")
         for prio in [config.Priority.HIGH, config.Priority.LOW]:
             fig, ax = plt.subplots(figsize=(20, 8))
@@ -126,7 +122,7 @@ class PlotterWFQ:
             filename = f"{run_prefix}_{1 if prio == config.Priority.HIGH else 2}_{'QoS' if prio == config.Priority.HIGH else 'Starvation'}_{prio.name}.png"
             self._save_plot(output_dir, filename, fig)
 
-        # --- 4. GRAFICO PERFORMANCE INTERNA WFQ (Grafico 3) ---
+
         print("--- Generazione grafico Performance Interna WFQ ---")
         fig3, ax3 = plt.subplots(figsize=(20, 8))
         self._setup_plot(ax3, f"Performance Interna del DWFQ - {run_prefix}", "Tempo Risposta Medio (s)", 20.0)
@@ -137,18 +133,18 @@ class PlotterWFQ:
         fig3.tight_layout()
         self._save_plot(output_dir, f"{run_prefix}_3_WFQ_Internal_Performance.png", fig3)
 
-        # --- 5. GENERAZIONE GRAFICI DI THROUGHPUT (Grafici 4, 5, 6) ---
+
         print("--- Generazione grafici di Throughput ---")
         for i, prio in enumerate(config.Priority, 4):
             fig, ax = plt.subplots(figsize=(20, 8))
             self._setup_plot(ax, f"Throughput (req/s) per Priorità {prio.name} - {run_prefix}", "Throughput (req/s)", 85.0)
 
-            # Calcolo carico teorico per questa priorità
+
             prio_share = sum(prob for rt, prob in self.config.TRAFFIC_PROFILE.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == prio)
             peak_load_prio = peak_load * prio_share
             ax.axhline(y=peak_load_prio, color='gray', linestyle=':', lw=2, alpha=0.9, label=f'Tasso Arrivo Teorico {prio.name} (~{peak_load_prio:.1f} req/s)')
 
-            # Calcolo e plot del throughput per ogni modello
+
             for model_name, metrics_obj in [('Baseline', self.metrics_base), ('Priorità', self.metrics_prio), ('WFQ', self.metrics_wfq)]:
                 if model_name == 'Baseline':
                     ts_list = [ts for rt, hist in metrics_obj.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == prio for ts, _ in hist]
@@ -164,7 +160,7 @@ class PlotterWFQ:
             fig.tight_layout()
             self._save_plot(output_dir, f"{run_prefix}_{i}_Throughput_{prio.name}.png", fig)
 
-        # --- 6. GENERAZIONE GRAFICI TASSO DI TIMEOUT (Grafici 7, 8, 9) ---
+
         print("--- Generazione grafici Tasso di Timeout ---")
         for i, prio in enumerate(config.Priority, 7):
             fig, ax = plt.subplots(figsize=(20, 8))

@@ -52,7 +52,7 @@ def main():
             simulator_base.run(simulation_duration=SIM_DURATION)
             metrics_base = simulator_base.metrics_agg
 
-            # <-- MODIFICA 2: Aggiungi l'esecuzione della simulazione DWFQ -->
+
             print(f"\n--- {scenario_name} (Replica {i+1}): SCENARIO DWFQ ---")
             simulator_wfq = SimulatorWFQ(
                 config, MetricsWithPriority,
@@ -61,17 +61,13 @@ def main():
             )
             simulator_wfq.run(simulation_duration=SIM_DURATION)
             metrics_wfq = simulator_wfq.metrics_agg
-            # -------------------------------------------------------------
 
-            # <-- MODIFICA 3: Salva entrambe le metriche nei risultati -->
-            # Usiamo la chiave 'priority' per le metriche DWFQ, così il plotter
-            # le disegnerà automaticamente nel secondo pannello.
             all_results[scenario_name][i] = {
                 'baseline': metrics_base,
                 'priority': metrics_wfq,
                 'seed': rep_seed
             }
-            # ---------------------------------------------------------
+
 
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE E SCENARI {'='*30}")
     print("\n--- Generazione di tutti i report di simulazione completata ---")

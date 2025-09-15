@@ -48,17 +48,13 @@ class newPlotter:
         ax.set_title(title, fontsize=16, pad=10)
         ax.set_ylabel('Tempo di Risposta Medio (s) [Scala Log]', fontsize=14) # Aggiorna l'etichetta
 
-        # --- MODIFICHE QUI ---
         ax.set_yscale('log')  # Imposta la scala logaritmica sull'asse Y
-        # Modifica il limite inferiore per evitare l'errore con lo zero
         ax.set_ylim(bottom=0.01, top=y_max)
-        # -------------------
 
         ax.tick_params(axis='both', which='major', labelsize=12)
         ax.legend(fontsize=12, loc='upper right')
         ax.grid(True, which='both', linestyle='--', linewidth=0.7)
 
-        # ZOOM: mostra solo da 0 a 30 sec
         ax.set_xlim(0, 30)
 
     # --- Funzione Principale ---
@@ -143,13 +139,7 @@ class newPlotter:
         per ogni Worker Node, evidenziando la formazione di hotspot.
         Opzionalmente, sovrappone l'andamento del numero di pod per ogni worker.
 
-        Args:
-            all_results (dict): Il dizionario completo con i risultati di tutte le simulazioni.
-            scenario_name (str): Il nome dello scenario da plottare (es. "tasso_85").
-            replica_idx (int): L'indice della replica da analizzare.
-            output_dir (str): La cartella dove salvare il grafico.
-            overlay_pods (bool): Se True, aggiunge un secondo asse Y e mostra l'evoluzione
-                                 del numero di pod per ogni worker.
+
         """
         print(f"Generazione grafico evoluzione code worker per '{scenario_name}', replica {replica_idx}...")
 
@@ -240,8 +230,5 @@ class newPlotter:
         print(f"Grafico salvato in: {save_path}")
 
 
-    # --- Funzione Principale ---
-    # Grafico: stampa il trend del tempo medio con intervallo di confidenza
-    # Analisi dello stazionario? studia la convergenza della media
 
 

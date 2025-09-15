@@ -25,9 +25,9 @@ class PodService:
         elif dist_type == "exponential":
             return self.rng.exponential(scale=params["scale"])
 
-        # --- NUOVA LOGICA PER LA DISTRIBUZIONE A MISTURA ---
+
         elif dist_type == "mixture":
-            # params sarà una lista di dizionari, ognuno con 'prob', 'dist', 'params'
+
 
             # Scegliamo quale distribuzione usare in base alla probabilità
             rand_choice = self.rng.random() # Genera un numero tra 0.0 e 1.0
@@ -44,12 +44,10 @@ class PodService:
                         return self.rng.exponential(scale=comp_params["scale"])
                     elif comp_dist == "lognormal":
                         return self.rng.lognormal(mean=comp_params[0], sigma=comp_params[1])
-                    # (si potrebbero aggiungere altre distribuzioni qui se necessario)
 
-            # Fallback nel caso improbabile di errore di arrotondamento
             print(f"ATTENZIONE: Nessun componente scelto nella mistura per {req_type.name}. Uso 0.1s di default.")
             return 0.1
-        # --- FINE NUOVA LOGICA ---
+
 
         else:
             print(f"ATTENZIONE: Distribuzione '{dist_type}' non riconosciuta. Uso 0.1s di default.")

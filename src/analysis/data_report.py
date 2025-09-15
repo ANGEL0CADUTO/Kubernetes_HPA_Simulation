@@ -80,8 +80,7 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
 
         # P_loss per tipo di richiesta
         for req_type in metrics.requests_timed_out_by_req_type:
-            # Dobbiamo calcolare le richieste generate per tipo
-            # Assumiamo che possiamo dedurlo dai dati disponibili
+
             completed = len(metrics.response_times_by_req_type[req_type])
             timed_out = metrics.requests_timed_out_by_req_type[req_type]
             total_for_type = completed + timed_out
@@ -148,7 +147,7 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
                 'pod_count': metrics.pod_counts[i],
                 'queue_length': metrics.queue_lengths[i]
             }
-            # Aggiungi lunghezze delle code per priorità
+
             for prio, lst in metrics.queue_lengths_per_priority.items():
                 if i < len(lst):
                     row[f"queue_length_{prio.name}"] = lst[i]

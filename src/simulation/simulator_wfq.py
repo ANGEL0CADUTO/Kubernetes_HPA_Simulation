@@ -106,8 +106,8 @@ class SimulatorWFQ:
                     # 1. Applica i pesi di crisi per le nuove richieste
                     worker.queue.update_weights(CRISIS_WEIGHTS)
 
-                    # 2. MODIFICA: Attiva il load shedding retroattivo per la classe LOW.
-                    # Purga immediatamente tutte le richieste LOW esistenti dalla coda del worker.
+                    # 2. Attiva il load shedding retroattivo per la classe LOW.
+
                     purged_requests = worker.queue.purge_by_priority(self.config.Priority.LOW)
 
                     if purged_requests:

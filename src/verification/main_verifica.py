@@ -34,7 +34,7 @@ def main_verification():
 
     print("\n--- [1/4] Configurazione del Caso Semplificato ---")
 
-    # --- MODIFICA CHIAVE: Abbiamo bisogno di un sistema stabile (rho < 1) ---
+
     # Con lambda=85 e c=24, la capacità totale (c*mu) deve essere > 85.
     # c * mu > 85  =>  24 * mu > 85  => mu > 3.54
     # Scegliamo un mu = 4.0, che corrisponde a E[S] = 1/4 = 0.25s.

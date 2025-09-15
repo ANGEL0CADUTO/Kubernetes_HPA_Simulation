@@ -5,25 +5,16 @@ import simpy
 from types import ModuleType
 from enum import Enum # <-- IMPORTAZIONE AGGIUNTA
 
-# ==============================================================================
-# LE CLASSI E LE DIPENDENZE SONO MANTENUTE COME NELL'ORIGINALE
-# (Assumo che i seguenti import funzionino nel tuo ambiente)
-# ==============================================================================
 
-# Aggiungi il percorso radice del progetto al sys.path
+
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- Inizio Sezione Stub/Mock per rendere lo script eseguibile ---
-# Poiché non ho i tuoi moduli, creo delle versioni "stub" per far funzionare lo script.
-# NON devi copiare questa parte se esegui lo script nel tuo progetto.
 
-# <<< LA CORREZIONE È QUI >>>
-# Ho cambiato la classe RequestType in una Enum per renderla iterabile
 class RequestType(Enum):
     NAVIGATION = "NAVIGATION"
     SEARCH = "SEARCH"
     OTHER = "OTHER"
-# <<< FINE DELLA CORREZIONE >>>
+
 
 class config:
     RequestType = RequestType
@@ -131,9 +122,7 @@ class MMcVerificationSimulator:
             self.env.process(self.pod_worker(i))
         self.env.run(until=simulation_duration)
 
-# ==============================================================================
-# FUNZIONI DI CALCOLO E ORCHESTRAZIONE (INVARIATE)
-# ==============================================================================
+
 
 def calculate_mmc_metrics(lam: float, mu: float, c: int) -> dict:
     if c * mu <= lam:

@@ -56,7 +56,7 @@ class HPA:
                 if self.env.now >= self.last_scale_up_time + self.config.SCALE_UP_COOLDOWN:
                     pods_to_add = desired_replicas - total_pod_count
 
-                    # MODIFICA: Applica il limite massimo per worker
+
                     current_pods_on_hotspot = hotspot['pod_count']
                     # Calcola il nuovo numero di pod, ma non superare il limite per worker
                     new_pod_count_on_hotspot = min(

@@ -19,7 +19,6 @@ class PodService:
         Genera un tempo di servizio stocastico basato sul tipo di richiesta,
         usando la configurazione locale fornita.
         """
-        # MODIFICA CHIAVE: Usa self.config, non il config globale importato
         service_config = self.config.SERVICE_TIME_CONFIG.get(req_type)
 
         if not service_config:
