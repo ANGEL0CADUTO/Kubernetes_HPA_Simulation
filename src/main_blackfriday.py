@@ -11,28 +11,38 @@ from src.utils.lehmer_rng import LehmerRNG as RNGManager
 
 def main_blackfriday_analysis():
     print("="*80)
-    print("ANALISI SCENARIO 'BLACK FRIDAY' (ARCHITETTURA A SILOS)")
+    print("ANALISI SCENARIO 'BLACK FRIDAY' ")
     print("="*80)
 
-    # <-- MODIFICA: Imposta il numero di repliche che vuoi visualizzare -->
     NUM_REPLICATIONS = 5
     config.SIMULATION_TIME = 5000
 
-    # ... (la definizione di lambda_black_friday rimane la stessa) ...
     t_notte_fine = config.SIMULATION_TIME * 0.15
     t_mattina_fine = config.SIMULATION_TIME * 0.30
-    t_picco1_fine = config.SIMULATION_TIME * 0.40
+    t_pranzo_fine = config.SIMULATION_TIME * 0.45
+    t_picco_fine = config.SIMULATION_TIME * 0.55
     t_pomeriggio_fine = config.SIMULATION_TIME * 0.70
-    t_picco2_fine = config.SIMULATION_TIME * 0.80
-    CARICO_NOTTE = 10; CARICO_MATTINA = 30; CARICO_PICCO_1 = 170
-    CARICO_POMERIGGIO = 85; CARICO_PICCO_2 = 300
+    t_sera_fine = config.SIMULATION_TIME * 0.85
+
+    CARICO_1 = 85
+    CARICO_2 = 85
+    CARICO_3 = 85
+    CARICO_4 = 85
+
     def lambda_black_friday(t: float) -> float:
-        if t < t_notte_fine: return CARICO_NOTTE
-        if t < t_mattina_fine: return CARICO_MATTINA
-        if t < t_picco1_fine: return CARICO_PICCO_1
-        if t < t_pomeriggio_fine: return CARICO_POMERIGGIO
-        if t < t_picco2_fine: return CARICO_PICCO_2
-        return CARICO_NOTTE
+        if t < t_notte_fine:
+            return CARICO_1          # 20
+        if t < t_mattina_fine:
+            return CARICO_2          # 40
+        if t < t_pranzo_fine:
+            return CARICO_3          # 85
+        if t < t_picco_fine:
+            return CARICO_4          # 170
+        if t < t_pomeriggio_fine:
+            return CARICO_3          # 85
+        if t < t_sera_fine:
+            return CARICO_2          # 40
+        return CARICO_1              # 20
 
     print(f"\nConfigurazione Esperimento 'Black Friday':")
     print(f" - Durata Simulazione: {config.SIMULATION_TIME}s, Repliche: {NUM_REPLICATIONS}")

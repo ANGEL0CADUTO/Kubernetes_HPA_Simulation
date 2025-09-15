@@ -1,4 +1,3 @@
-# File: analysis/plotter_blackfriday.py
 
 import numpy as np
 import pandas as pd
@@ -10,10 +9,9 @@ from collections import defaultdict
 from src import config
 from matplotlib.ticker import MaxNLocator
 import matplotlib.ticker as mticker
-# MODIFICA: Import mancanti aggiunti per usare isinstance()
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from src.utils.rvms import idfStudent  # Assumiamo che rvms.py sia disponibile nell'ambiente
+from src.utils.rvms import idfStudent
 from math import sqrt
 
 matplotlib.use('Agg')
@@ -133,10 +131,6 @@ class PlotterBlackFriday:
         self._save_plot(output_dir, f"{run_prefix}_2_hotspot_QoS_HIGH.png", fig)
 
     def _plot_worker_queue_evolution(self, output_dir, run_prefix):
-        """
-        MODIFICATO: Semplificata la gestione dei timestamp per garantire l'allineamento
-        e la corretta visualizzazione degli assi.
-        """
         scenarios = {
             'Baseline (FIFO)': self.metrics_per_worker_base,
             'DWFQ': self.metrics_per_worker_wfq
@@ -147,7 +141,6 @@ class PlotterBlackFriday:
             fig.suptitle(f'Evoluzione Code e Pod per Worker - Scenario: {scenario_name} - {run_prefix}',
                          fontsize=18, fontweight='bold')
 
-            # --- Sottografico 1: Lunghezza delle Code ---
             ax1.set_ylabel('N. Richieste in Coda (Media per 30s)', fontsize=14)
             ax1.set_yscale('log')
             ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
@@ -161,7 +154,6 @@ class PlotterBlackFriday:
                 metrics = metrics_per_worker[i]
                 timestamps, lengths = [], []
                 if isinstance(metrics, (Metrics, MetricsWithPriority)):
-                    # La logica di estrazione dei dati grezzi rimane la stessa
                     if hasattr(metrics, 'queue_length_history') and metrics.queue_length_history:
                         timestamps, lengths = zip(*metrics.queue_length_history)
                     elif hasattr(metrics, 'timestamps') and metrics.timestamps:
@@ -171,14 +163,10 @@ class PlotterBlackFriday:
                     s = pd.Series(lengths, index=pd.to_datetime(timestamps, unit='s'))
                     resampled_mean = s.resample('30S').mean()
                     resampled_max = s.resample('30S').max()
-
-                    # MODIFICA: Plotta direttamente usando l'indice DatetimeIndex di Pandas.
-                    # Per l'asse X, usiamo i valori numerici dei timestamp.
                     time_values = (resampled_mean.index - pd.to_datetime(0, unit='s')).total_seconds()
                     ax1.plot(time_values, resampled_mean.values, label=f'Coda Worker {i} (Media)', color=colors[i], linewidth=2.5)
                     ax1.fill_between(time_values, resampled_mean.values, resampled_max.values, color=colors[i], alpha=0.2)
 
-            # --- Sottografico 2: Numero di Pod ---
             ax2.set_ylabel('Numero di Pod Attivi', fontsize=14)
             ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
             ax2.grid(True, which='both', linestyle='--', linewidth=0.5)
@@ -204,7 +192,6 @@ class PlotterBlackFriday:
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])
             filename = f"3_worker_evolution_{scenario_name.replace(' ', '_').lower()}.png"
             self._save_plot(output_dir, f"{run_prefix}_{filename}", fig)
-
 
     def _plot_tradeoff_dashboard(self, output_dir, run_prefix):
         fig, axes = plt.subplots(1, 2, figsize=(22, 10), sharey=False)
@@ -237,9 +224,8 @@ class PlotterBlackFriday:
         ax2 = axes[1]
         lost_data = []
         base_lost_by_prio = defaultdict(int)
-        # CORREZIONE: usiamo getattr per sicurezza
         for ts, req_obj in self.metrics_base_agg.timeout_history:
-            req_type = getattr(req_obj, 'req_type', req_obj) # Gestisce sia oggetti che enum
+            req_type = getattr(req_obj, 'req_type', req_obj)
             prio = self.config.REQUEST_TYPE_TO_PRIORITY[req_type]
             base_lost_by_prio[prio] += 1
 
@@ -267,26 +253,14 @@ class PlotterBlackFriday:
         self._save_plot(output_dir, f"{run_prefix}_4_tradeoff_dashboard.png", fig)
 
 
-
-    # ==============================================================================
-    # NUOVI METODI DI PLOTTING AVANZATI
-    # ==============================================================================
-
     def _plot_latency_heatmap(self, output_dir, run_prefix):
-        """
-        NUOVO: Genera una heatmap per confrontare la latenza media delle richieste HIGH
-        su ogni worker per ogni scenario.
-        """
         heatmap_data = []
         scenarios = {
             'Baseline (FIFO)': self.metrics_per_worker_base,
             'DWFQ': self.metrics_per_worker_wfq
         }
-
         for scenario_name, metrics_per_worker in scenarios.items():
             for i, worker_metrics in enumerate(metrics_per_worker):
-
-                # Estrai i tempi di risposta solo per le richieste HIGH
                 high_responses = []
                 if isinstance(worker_metrics, MetricsWithPriority):
                     high_responses.extend(worker_metrics.response_times_by_priority.get(config.Priority.HIGH, []))
@@ -294,32 +268,24 @@ class PlotterBlackFriday:
                     for rt, history in worker_metrics.response_times_history.items():
                         if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH:
                             high_responses.extend([val for ts, val in history])
-
                 mean_latency = np.mean(high_responses) if high_responses else 0
                 heatmap_data.append({
                     'Scenario': scenario_name,
                     'Worker': f'Worker {i}',
                     'Latenza Media HIGH (s)': mean_latency
                 })
-
         df = pd.DataFrame(heatmap_data)
         pivot_df = df.pivot(index='Scenario', columns='Worker', values='Latenza Media HIGH (s)')
-
         fig, ax = plt.subplots(figsize=(12, 8))
         sns.heatmap(pivot_df, annot=True, fmt=".3f", linewidths=.5, cmap="coolwarm_r", ax=ax)
         ax.set_title(f'Heatmap Latenza Richieste HIGH per Worker - {run_prefix}', fontsize=16)
         self._save_plot(output_dir, f"{run_prefix}_5_latency_heatmap.png", fig)
 
     def _plot_hpa_scaling_trace(self, output_dir, run_prefix):
-        """
-        NUOVO: Genera un grafico a barre impilate per mostrare la distribuzione
-        dei pod tra i worker nel tempo.
-        """
         scenarios = {
             'Baseline (FIFO)': self.metrics_per_worker_base,
             'DWFQ': self.metrics_per_worker_wfq
         }
-
         for scenario_name, metrics_per_worker in scenarios.items():
             all_data = []
             for i, worker_metrics in enumerate(metrics_per_worker):
@@ -329,73 +295,50 @@ class PlotterBlackFriday:
                         history = list(zip(worker_metrics.timestamps, worker_metrics.pod_counts))
                 elif isinstance(worker_metrics, Metrics):
                     history = worker_metrics.pod_count_history
-
                 if history:
                     df_worker = pd.DataFrame(history, columns=['timestamp', f'Worker {i}'])
                     df_worker['timestamp'] = pd.to_datetime(df_worker['timestamp'], unit='s')
                     df_worker = df_worker.set_index('timestamp')
                     all_data.append(df_worker)
-
             if not all_data: continue
-
-            # Concatena i dati e riempie i valori mancanti per creare una serie temporale continua
             combined_df = pd.concat(all_data, axis=1).ffill().fillna(0)
-
             fig, ax = plt.subplots(figsize=(20, 12))
-            # Usa il plotting integrato di Pandas per barre impilate
             combined_df.plot(kind='bar', stacked=True, ax=ax, width=1.0,
                              color=sns.color_palette("husl", n_colors=len(metrics_per_worker)))
-
             ax.set_title(f'Traccia di Scaling HPA per Worker - Scenario: {scenario_name} - {run_prefix}', fontsize=16)
             ax.set_ylabel('Numero Totale di Pod Attivi', fontsize=12)
             ax.set_xlabel('Tempo di Simulazione (s)', fontsize=12)
-
-            # Semplifica le etichette dell'asse X per evitare sovraffollamento
             tick_labels = [item.get_text() for item in ax.get_xticklabels()]
             simplified_ticks = [label.split(' ')[1].split('.')[0] for label in tick_labels]
             ax.set_xticklabels(simplified_ticks, rotation=90)
-            # Mostra un tick ogni N per leggibilità
             n = max(1, len(simplified_ticks) // 50)
             [l.set_visible(False) for (i, l) in enumerate(ax.xaxis.get_ticklabels()) if i % n != 0]
-
             ax.legend(title='Worker')
             self._save_plot(output_dir, f"{run_prefix}_6_hpa_scaling_trace_{scenario_name.replace(' ', '_').lower()}.png", fig)
 
     def _plot_cumulative_loss_trace(self, output_dir, run_prefix):
-        """
-        NUOVO: Mostra il numero cumulativo di richieste perse nel tempo,
-        distinte per priorità e scenario.
-        """
         fig, ax = plt.subplots(figsize=(20, 12))
         ax.set_title(f'Traccia Cumulativa Richieste Perse per Priorità - {run_prefix}', fontsize=16)
-
         scenarios = {
             'Baseline (FIFO)': (self.metrics_base_agg, '-'),
             'DWFQ': (self.metrics_wfq_agg, '--')
         }
         colors = {config.Priority.HIGH: 'red', config.Priority.MEDIUM: 'orange', config.Priority.LOW: 'gray'}
-
         for scenario_name, (metrics, linestyle) in scenarios.items():
             for prio in config.Priority:
-
                 history = metrics.timeout_history
-                # Filtra i timeout per la priorità corrente
                 timestamps = sorted([ts for ts, req in history if self.config.REQUEST_TYPE_TO_PRIORITY.get(getattr(req, 'req_type', req), None) == prio])
-
                 if timestamps:
                     cumulative_counts = np.arange(1, len(timestamps) + 1)
                     ax.plot(timestamps, cumulative_counts,
                             label=f'{scenario_name} - {prio.name}',
                             color=colors[prio], linestyle=linestyle, lw=2.5)
-
         ax.set_xlabel('Tempo di Simulazione (s)', fontsize=12)
         ax.set_ylabel('Numero Cumulativo di Richieste Perse', fontsize=12)
         ax.set_yscale('log'); ax.set_ylim(bottom=1)
         ax.grid(True, which='both', linestyle='--'); ax.legend(title='Scenario - Priorità')
         self._save_plot(output_dir, f"{run_prefix}_7_cumulative_loss_trace.png", fig)
 
-
-    # NUOVA FUNZIONE HELPER per calcolare la media cumulativa
     @staticmethod
     def _calculate_cumulative_average(history: list):
         """
@@ -404,79 +347,37 @@ class PlotterBlackFriday:
         """
         if not history or len(history) < 2:
             return [], []
-
-        # Ordina per timestamp, che è cruciale per una media cumulativa corretta
         sorted_history = sorted(history, key=lambda x: x[0])
         times, values = zip(*sorted_history)
-
-        # Calcola la media cumulativa usando numpy per efficienza
         cumulative_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
-
         return list(times), list(cumulative_avg)
-
-
-    # GRAFICI CON INTERVALLI DI CONFIDENZA (ESTIMATE)
 
     @staticmethod
     def _calculate_confidence_interval_from_estimate_py(sample: list, confidence: float = 0.95):
-        """
-        Calcola l'intervallo di confidenza per un campione di dati, replicando
-        esattamente l'algoritmo e le formule presenti in estimate.py.
-
-        Args:
-            sample (list): Una lista di valori numerici.
-            confidence (float): Il livello di confidenza desiderato (es. 0.95).
-
-        Returns:
-            tuple: (media, limite_inferiore, limite_superiore) o (None, None, None) se
-                   il calcolo non è possibile.
-        """
         n = len(sample)
-        if n <= 1:
-            # Impossibile calcolare deviazione standard o intervallo
-            return None, None, None
-
-        # Replica di Welford's one-pass method da estimate.py per media e dev. std.
+        if n <= 1: return None, None, None
         mean = 0.0
         sum_sq_diff = 0.0
         for i, x in enumerate(sample):
             diff = x - mean
             mean += diff / (i + 1)
             sum_sq_diff += diff * (x - mean)
-
-        # La varianza campionaria è sum_sq_diff / (n-1).
-        # Lo stdev in estimate.py è sqrt(sum / n), dove sum è sum_sq_diff.
-        # Questo calcolo è leggermente diverso da np.std(ddof=1) ma ci atteniamo all'originale.
         stdev = sqrt(sum_sq_diff / n)
-
-        # Calcolo dei parametri dell'intervallo, esattamente come in estimate.py
         u = 1.0 - 0.5 * (1.0 - confidence)
         t = idfStudent(n - 1, u)
-
-        # Formula esatta da estimate.py, con sqrt(n-1) al denominatore
         w = t * stdev / sqrt(n - 1)
-
         return mean, mean - w, mean + w
 
-
     def plot_confidence_interval_trace(self, all_results: dict, lambda_func, output_dir: str, confidence=0.95):
-        """
-        MODIFICATO (v2): Genera un grafico con l'intervallo di confidenza.
-        Lo stile è stato migliorato per massima leggibilità e qualità professionale.
-        """
         print("\n--- Generazione Grafico IC (metodo estimate.py) Stile Avanzato ---")
         plt.style.use('seaborn-v0_8-whitegrid')
         sim_time = self.config.SIMULATION_TIME
         num_replications = len(all_results)
-
         models_to_plot = {'baseline': 'Baseline (FIFO)', 'wfq': 'DWFQ'}
         time_bin_size = '30s'
-
         for model_key, model_name_display in models_to_plot.items():
-            # --- 1. Preparazione Dati ---
             replication_series = []
             for i in range(num_replications):
-                # ... (logica di estrazione dati invariata)
                 metrics = all_results[i].get(model_key)
                 if not metrics: continue
                 if model_key == 'baseline':
@@ -487,11 +388,8 @@ class PlotterBlackFriday:
                 times, values = zip(*history)
                 s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
                 replication_series.append(s.resample(time_bin_size).mean())
-
             if not replication_series: continue
             df = pd.concat(replication_series, axis=1)
-
-            # --- 2. Calcolo Statistico ---
             results = []
             for index, row in df.iterrows():
                 sample = row.dropna().tolist()
@@ -499,99 +397,45 @@ class PlotterBlackFriday:
                 results.append({'time': index, 'mean': mean, 'ci_lower': ci_lower, 'ci_upper': ci_upper})
             results_df = pd.DataFrame(results).set_index('time').dropna()
             if results_df.empty: continue
-
-            # --- 3. Plotting ---
             fig, ax = plt.subplots(figsize=(20, 10))
-
-            # FIX 2: Font più grandi
             ax.set_title(f'Tempo di Risposta Medio (HIGH Prio) con Intervallo di Confidenza al {int(confidence*100)}%\n'
                          f'Modello: {model_name_display} - Basato su {num_replications} Repliche',
                          fontsize=18, fontweight='bold')
-
             time_in_seconds = (results_df.index - pd.to_datetime(0, unit='s')).total_seconds()
-
             ax.plot(time_in_seconds, results_df['mean'], color='darkcyan', lw=2.5, label='Media tra Repliche')
             ax.fill_between(time_in_seconds, results_df['ci_lower'], results_df['ci_upper'], color='darkcyan', alpha=0.2, label='Intervallo di Confidenza')
-
             ax_load = ax.twinx()
             load_times = np.linspace(0, sim_time, num=int(sim_time))
             load_values = [lambda_func(t) for t in load_times]
             ax_load.plot(load_times, load_values, color='dimgray', linestyle=':', lw=2.5, alpha=0.8, label='Carico Applicato')
             ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
             ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
-
-            # Stile Avanzato
             ax.set_xlabel("Tempo di Simulazione (s)", fontsize=16)
             ax.set_ylabel("Tempo di Risposta Medio (s)", fontsize=16)
             ax.tick_params(axis='both', which='major', labelsize=14)
-            ax.set_xlim(0, sim_time)
+            x_padding = sim_time * 0.02
+            ax.set_xlim(left=-x_padding, right=sim_time + x_padding)
             ax.set_ylim(bottom=0)
-
-            # FIX 1: Tick adattivi
             ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
             ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
-
-            # FIX 5: Griglia solo su assi primari
             ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
-
-            # FIX 3: Bordo del grafico più spesso
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
                 spine.set_edgecolor('black')
-
-            # FIX 6: Legenda migliorata
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',
+            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
-
             fig.tight_layout()
             self._save_plot(output_dir, f"confidence_trace_blackfriday_{model_key}.png", fig)
 
 
-    # Funzione helper per calcolare la media mobile, ripristinata e strutturata
-    @staticmethod
-    def _calculate_moving_average(history: list, window_str: str = '60s', resample_str: str = '10s'):
-        """Calcola la media mobile basata sul tempo usando pandas."""
-        if not history or len(history) < 2:
-            return pd.Series(dtype=np.float64)
-        times, values = zip(*sorted(history, key=lambda x: x[0]))
-        s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
-        return s.resample(resample_str).mean().rolling(window=window_str, min_periods=1).mean()
-
-    # Nuova funzione helper per plottare una singola traccia, stile newPlotter
-    @staticmethod
-    def _plot_single_ma_trace(ax: plt.Axes, history: list, color: tuple, label: str):
-        """
-        Calcola e plotta la traccia della media mobile per una singola replica.
-        Restituisce il valore massimo della traccia per la scalatura dell'asse Y.
-        """
-        ma_series = PlotterBlackFriday._calculate_moving_average(history)
-        if ma_series.empty:
-            return 0
-
-        time_in_seconds = (ma_series.index - pd.to_datetime(0, unit='s')).total_seconds()
-        ax.plot(time_in_seconds, ma_series.values, color=color, label=label, linewidth=1.5, alpha=0.9)
-        return ma_series.max()
-
-    # Nuova funzione helper per lo stile del subplot, stile newPlotter
-    @staticmethod
-    def _style_replication_subplot(ax: plt.Axes, title: str, y_max: float):
-        """Applica uno stile standardizzato al subplot delle repliche."""
-        ax.set_title(title, fontsize=16, pad=12)
-        ax.set_ylabel('Tempo Risposta Medio Mobile (s)', fontsize=14)
-        ax.tick_params(axis='both', which='major', labelsize=12)
-        ax.legend(fontsize=11, loc='upper left', title='Legenda')
-        ax.grid(True, which='both', linestyle='--', linewidth=0.6, alpha=0.7)
-        ax.set_ylim(bottom=0, top=y_max)
-
-
     def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
         """
-        MODIFICATO (v2): Genera grafici con le tracce della MEDIA MOBILE per ogni replica.
-        Lo stile è stato migliorato per massima leggibilità e qualità professionale.
+        CORRETTO: Genera grafici con le tracce della MEDIA CUMULATIVA per ogni replica,
+         per l'analisi del transitorio.
         """
-        print("\n--- Generazione Grafici Tracce Repliche (Media Mobile) Stile Avanzato ---")
+        print("\n--- Generazione Grafici Tracce Repliche (Media Cumulativa) ---")
         plt.style.use('seaborn-v0_8-whitegrid')
         sim_time = self.config.SIMULATION_TIME
         num_replications = len(all_results)
@@ -599,14 +443,12 @@ class PlotterBlackFriday:
 
         for model_key, model_name_display in models_to_plot.items():
             fig, ax = plt.subplots(figsize=(20, 10))
-
-            # FIX 2: Font più grandi per il titolo
-            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario Black Friday',
+            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario di carico: 85 req/s',
                          fontsize=22, weight='bold')
 
-            # FIX 4: Palette di colori vibrante e ad alto contrasto
             colors = sns.color_palette("husl", n_colors=num_replications)
-            max_y_val = 0
+            min_y_val, max_y_val = float('inf'), float('-inf')
+            has_data = False
 
             for i in range(num_replications):
                 rep_data = all_results[i]
@@ -618,10 +460,21 @@ class PlotterBlackFriday:
                 else:
                     history = metrics.response_times_history_by_prio.get(config.Priority.HIGH, [])
 
-                current_max = self._plot_single_ma_trace(ax, history, colors[i], f"Seed: {rep_data['seed']}")
-                if current_max > max_y_val:
-                    max_y_val = current_max
+                times, cumulative_avg = self._calculate_cumulative_average(history)
+                if not times: continue
+                has_data = True
 
+                ax.plot(times, cumulative_avg, color=colors[i], label=f"Seed: {rep_data['seed']}", linewidth=1.5, alpha=0.9)
+
+                # Aggiorna i limiti per la scalatura automatica
+                min_y_val = min(min_y_val, np.min(cumulative_avg))
+                max_y_val = max(max_y_val, np.max(cumulative_avg))
+
+            if not has_data:
+                plt.close(fig)
+                continue
+
+            # Asse secondario per il carico
             ax_load = ax.twinx()
             load_times = np.linspace(0, sim_time, num=int(sim_time))
             load_values = [lambda_func(t) for t in load_times]
@@ -629,30 +482,28 @@ class PlotterBlackFriday:
             ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
             ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
 
-            # Applica Stile Avanzato
+            # Stile e formattazione assi primari
             ax.set_xlabel('Tempo di Simulazione (s)', fontsize=16)
-            ax.set_ylabel('Tempo Risposta Medio Mobile (s)', fontsize=16)
+            ax.set_ylabel('Tempo Risposta Medio Cumulativo (s)', fontsize=16)
             ax.tick_params(axis='both', which='major', labelsize=14)
-            ax.set_xlim(0, sim_time)
-            if max_y_val > 0: ax.set_ylim(bottom=0, top=max_y_val * 1.15)
+            x_padding = sim_time * 0.02
+            ax.set_xlim(left=-x_padding, right=sim_time + x_padding)
 
-            # FIX 1: Tick adattivi
+            # CORREZIONE 1 & 4: Imposta i limiti Y per non partire da zero e centrare il trend
+            padding = (max_y_val - min_y_val) * 0.1 # Aggiunge 10% di padding
+            ax.set_ylim(bottom=max(0, min_y_val - padding), top=max_y_val + padding)
+
             ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
-            ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
-
-            # FIX 5: Griglia solo su assi primari (comportamento di default di ax.grid)
             ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
-
-            # FIX 3: Bordo del grafico più spesso
             for spine in ax.spines.values():
                 spine.set_linewidth(1.5)
                 spine.set_edgecolor('black')
 
-            # FIX 6: Legenda migliorata
+            # CORREZIONE 3: Legenda in basso a sinistra
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=14, title='Legenda',
+            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-            self._save_plot(output_dir, f"replication_traces_ma_blackfriday_{model_key}.png", fig)
+            self._save_plot(output_dir, f"replication_traces_cumulative_blackfriday_{model_key}.png", fig)
