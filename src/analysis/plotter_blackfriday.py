@@ -427,7 +427,7 @@ class PlotterBlackFriday:
             ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
             fig.tight_layout()
-            self._save_plot(output_dir, f"confidence_trace_blackfriday_{model_key}.png", fig)
+            self._save_plot(output_dir, f"confidence_trace_blackfriday_{model_key}_255.png", fig)
 
 
     def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
@@ -443,7 +443,7 @@ class PlotterBlackFriday:
 
         for model_key, model_name_display in models_to_plot.items():
             fig, ax = plt.subplots(figsize=(20, 10))
-            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario di carico: 85 req/s',
+            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario di carico: 255 req/s',
                          fontsize=22, weight='bold')
 
             colors = sns.color_palette("husl", n_colors=num_replications)
@@ -506,4 +506,4 @@ class PlotterBlackFriday:
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-            self._save_plot(output_dir, f"replication_traces_cumulative_blackfriday_{model_key}.png", fig)
+            self._save_plot(output_dir, f"replication_traces_cumulative_blackfriday_{model_key}_255.png", fig)

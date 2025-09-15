@@ -24,10 +24,10 @@ def main_blackfriday_analysis():
     t_pomeriggio_fine = config.SIMULATION_TIME * 0.70
     t_sera_fine = config.SIMULATION_TIME * 0.85
 
-    CARICO_1 = 85
-    CARICO_2 = 85
-    CARICO_3 = 85
-    CARICO_4 = 85
+    CARICO_1 = 255
+    CARICO_2 = 255
+    CARICO_3 = 255
+    CARICO_4 = 255
 
     def lambda_black_friday(t: float) -> float:
         if t < t_notte_fine:

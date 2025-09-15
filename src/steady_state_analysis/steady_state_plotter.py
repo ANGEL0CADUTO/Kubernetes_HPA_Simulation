@@ -1,7 +1,9 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import t
+
+from src.steady_state_analysis.steady_state_plots import  CumulativeResponsePlotter
+
 
 class SteadyStatePlotter:
     """
@@ -71,6 +73,8 @@ class SteadyStatePlotter:
         ax.axhspan(ci_lower, ci_upper, color='gray', alpha=0.25,
                    label=f'IC al {results["confidence_level"]:.0%}: [{ci_lower:.4f}, {ci_upper:.4f}]s')
 
+
+
         title_fontsize = 24
         label_fontsize = 22
         tick_fontsize = 20
@@ -125,7 +129,49 @@ class SteadyStatePlotter:
                     scenario_name=scenario,
                     output_dir=output_dir
                 )
+                print(f"  - Generazione grafici cumulativi per lo scenario: {scenario}")
+                # Estrai i dati necessari
+                results = all_results.get(scenario, {})
+                steady_values = all_steady_values.get(scenario, [])
+
+                b = results.get('batch_size')
+                k = results.get('num_batches')
+                grand_mean = results.get('mean')
+                system_label = scenario
+
+                # Calcola batch_mean_values da passare alla classe CumulativeResponsePlotter
+                batch_mean_values = []
+                if b is not None and k is not None and b > 0 and k > 0 and len(steady_values) >= b * k:
+                    batch_mean_values = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
+                else:
+                    print(f"    - ATTENZIONE: Dati batch insufficienti o non validi per i grafici cumulativi dello scenario '{scenario}'.")
+
+                # Istanzia e chiama i metodi di plotting cumulativo SOLO SE ci sono dati validi per i batch
+                if batch_mean_values:
+                    cumulative_plotter = CumulativeResponsePlotter(output_dir=output_dir)
+
+                    cumulative_plotter.plot_by_batch(
+                        batch_mean_values=batch_mean_values,
+                        overall_mean=grand_mean,
+                        system_label=system_label
+                    )
+
+                    cumulative_plotter.plot_by_jobs(
+                        batch_mean_values=batch_mean_values,
+                        batch_size=b,
+                        overall_mean=grand_mean,
+                        system_label=system_label
+                    )
+                else:
+                    print(f"    - ATTENZIONE: Saltati i grafici cumulativi per lo scenario '{scenario}' a causa di dati insufficienti o non validi.")
+
+
             else:
                 print(f"  - ATTENZIONE: Dati o risultati mancanti per lo scenario '{scenario}'. Grafico non generato.")
 
         print("\n--- Report grafici generati con successo. ---")
+
+
+
+
+
