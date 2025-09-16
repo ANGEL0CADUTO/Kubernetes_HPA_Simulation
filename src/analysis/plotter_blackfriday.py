@@ -343,12 +343,30 @@ class PlotterBlackFriday:
     def _calculate_cumulative_average(history: list):
         """
         Calcola la media cumulativa da una history di tuple (timestamp, valore).
-        Restituisce i timestamp e i valori della media cumulativa.
+        CORRETTO (v2): Gestisce i timestamp duplicati aggregandoli tramite media
+        per rendere il calcolo robusto prima della creazione della Serie Pandas.
         """
         if not history or len(history) < 2:
             return [], []
-        sorted_history = sorted(history, key=lambda x: x[0])
-        times, values = zip(*sorted_history)
+
+        # --- INIZIO MODIFICA ---
+        # Convertiamo in un DataFrame Pandas per gestire facilmente i duplicati
+        df = pd.DataFrame(history, columns=['timestamp', 'value'])
+
+        # Se ci sono timestamp duplicati, li aggreghiamo calcolando la media dei loro valori.
+        # Questo è il modo più corretto per gestire eventi simultanei.
+        if df['timestamp'].duplicated().any():
+            df = df.groupby('timestamp')['value'].mean().reset_index()
+
+        # Ora siamo sicuri che i timestamp siano unici. Procediamo come prima.
+        # Assicuriamoci che sia ancora ordinato per timestamp dopo il groupby
+        df = df.sort_values(by='timestamp')
+
+        times = df['timestamp'].tolist()
+        values = df['value'].tolist()
+        # --- FINE MODIFICA ---
+
+        # Il resto della logica rimane invariato
         cumulative_avg = np.cumsum(values) / np.arange(1, len(values) + 1)
         return list(times), list(cumulative_avg)
 
