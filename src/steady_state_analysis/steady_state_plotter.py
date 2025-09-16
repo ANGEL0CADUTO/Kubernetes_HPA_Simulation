@@ -81,7 +81,7 @@ class SteadyStatePlotter:
         legend_fontsize = 18
 
         ax.set_title(f'Analisi Tempo di Risposta per Batch - {scenario_name}', fontsize=title_fontsize, weight='bold')
-        ax.set_xlabel('Numero del Batch', fontsize=label_fontsize)
+        ax.set_xlabel('Numero di Batch', fontsize=label_fontsize)
         ax.set_ylabel('Tempo di Risposta Medio per Batch (s)', fontsize=label_fontsize)
         ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
 
@@ -92,10 +92,28 @@ class SteadyStatePlotter:
         ax.grid(True, which='both', linestyle=':', linewidth=0.7)
         ax.set_xlim(left=0, right=k + 1)
 
+        #min_val = min(batch_means_values)
+        #max_val = max(batch_means_values)
+        #padding = (max_val - min_val) * 0.30
+        #ax.set_ylim(bottom=max(0, min_val - padding), top=max_val + padding)
+
         min_val = min(batch_means_values)
         max_val = max(batch_means_values)
-        padding = (max_val - min_val) * 0.30
-        ax.set_ylim(bottom=max(0, min_val - padding), top=max_val + padding)
+        range_val = max_val - min_val
+
+        # Padding più ampio
+        padding = max(range_val * 0.50, 0.2)  # almeno 0.1s di margine
+
+        if range_val < 1e-6:  # valori quasi costanti
+            bottom, top = min_val - 0.3, max_val + 0.3
+        else:
+            bottom, top = min_val - padding, max_val + padding
+
+        ax.set_ylim(bottom=max(0, bottom), top=top)
+
+
+
+
 
         ljung_box_pvalue_str = f"{results['ljung_box_pvalue']:.4f}" if results.get('ljung_box_pvalue') is not None else "N/A"
         stats_text = (

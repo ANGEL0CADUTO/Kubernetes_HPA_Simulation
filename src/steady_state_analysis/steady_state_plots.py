@@ -49,7 +49,23 @@ class CumulativeResponsePlotter:
         if overall_mean is not None:
             ax.axhline(y=overall_mean, color='yellow', linestyle='--', linewidth=2,
                        label=f'Media Globale: {overall_mean:.4f}s')
-        ax.set_yscale('log')
+
+        min_val = np.min(cumulative_mean_values)
+        max_val = np.max(cumulative_mean_values)
+        range_val = max_val - min_val
+
+        # Padding più stretto
+        padding = max(range_val * 0.10, 0.01)  # almeno 0.01s di margine
+
+        if range_val < 1e-6:
+            bottom, top = min_val - 0.05, max_val + 0.05
+        else:
+            bottom, top = min_val - padding, max_val + padding
+
+        ax.set_ylim(bottom=max(0, bottom), top=top)
+
+
+
 
         ax.set_title(title, fontsize=20, weight='bold')
         ax.set_xlabel(x_label, fontsize=16)
