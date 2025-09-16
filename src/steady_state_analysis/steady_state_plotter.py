@@ -1,7 +1,9 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import t
+
+from src.steady_state_analysis.steady_state_plots import  CumulativeResponsePlotter
+
 
 class SteadyStatePlotter:
     """
@@ -71,13 +73,15 @@ class SteadyStatePlotter:
         ax.axhspan(ci_lower, ci_upper, color='gray', alpha=0.25,
                    label=f'IC al {results["confidence_level"]:.0%}: [{ci_lower:.4f}, {ci_upper:.4f}]s')
 
+
+
         title_fontsize = 24
         label_fontsize = 22
         tick_fontsize = 20
         legend_fontsize = 18
 
         ax.set_title(f'Analisi Tempo di Risposta per Batch - {scenario_name}', fontsize=title_fontsize, weight='bold')
-        ax.set_xlabel('Numero del Batch', fontsize=label_fontsize)
+        ax.set_xlabel('Numero di Batch', fontsize=label_fontsize)
         ax.set_ylabel('Tempo di Risposta Medio per Batch (s)', fontsize=label_fontsize)
         ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
 
@@ -88,10 +92,28 @@ class SteadyStatePlotter:
         ax.grid(True, which='both', linestyle=':', linewidth=0.7)
         ax.set_xlim(left=0, right=k + 1)
 
+        #min_val = min(batch_means_values)
+        #max_val = max(batch_means_values)
+        #padding = (max_val - min_val) * 0.30
+        #ax.set_ylim(bottom=max(0, min_val - padding), top=max_val + padding)
+
         min_val = min(batch_means_values)
         max_val = max(batch_means_values)
-        padding = (max_val - min_val) * 0.30
-        ax.set_ylim(bottom=max(0, min_val - padding), top=max_val + padding)
+        range_val = max_val - min_val
+
+        # Padding più ampio
+        padding = max(range_val * 0.50, 0.2)  # almeno 0.1s di margine
+
+        if range_val < 1e-6:  # valori quasi costanti
+            bottom, top = min_val - 0.3, max_val + 0.3
+        else:
+            bottom, top = min_val - padding, max_val + padding
+
+        ax.set_ylim(bottom=max(0, bottom), top=top)
+
+
+
+
 
         ljung_box_pvalue_str = f"{results['ljung_box_pvalue']:.4f}" if results.get('ljung_box_pvalue') is not None else "N/A"
         stats_text = (
@@ -125,7 +147,49 @@ class SteadyStatePlotter:
                     scenario_name=scenario,
                     output_dir=output_dir
                 )
+                print(f"  - Generazione grafici cumulativi per lo scenario: {scenario}")
+                # Estrai i dati necessari
+                results = all_results.get(scenario, {})
+                steady_values = all_steady_values.get(scenario, [])
+
+                b = results.get('batch_size')
+                k = results.get('num_batches')
+                grand_mean = results.get('mean')
+                system_label = scenario
+
+                # Calcola batch_mean_values da passare alla classe CumulativeResponsePlotter
+                batch_mean_values = []
+                if b is not None and k is not None and b > 0 and k > 0 and len(steady_values) >= b * k:
+                    batch_mean_values = [np.mean(steady_values[i*b : (i+1)*b]) for i in range(k)]
+                else:
+                    print(f"    - ATTENZIONE: Dati batch insufficienti o non validi per i grafici cumulativi dello scenario '{scenario}'.")
+
+                # Istanzia e chiama i metodi di plotting cumulativo SOLO SE ci sono dati validi per i batch
+                if batch_mean_values:
+                    cumulative_plotter = CumulativeResponsePlotter(output_dir=output_dir)
+
+                    cumulative_plotter.plot_by_batch(
+                        batch_mean_values=batch_mean_values,
+                        overall_mean=grand_mean,
+                        system_label=system_label
+                    )
+
+                    cumulative_plotter.plot_by_jobs(
+                        batch_mean_values=batch_mean_values,
+                        batch_size=b,
+                        overall_mean=grand_mean,
+                        system_label=system_label
+                    )
+                else:
+                    print(f"    - ATTENZIONE: Saltati i grafici cumulativi per lo scenario '{scenario}' a causa di dati insufficienti o non validi.")
+
+
             else:
                 print(f"  - ATTENZIONE: Dati o risultati mancanti per lo scenario '{scenario}'. Grafico non generato.")
 
         print("\n--- Report grafici generati con successo. ---")
+
+
+
+
+

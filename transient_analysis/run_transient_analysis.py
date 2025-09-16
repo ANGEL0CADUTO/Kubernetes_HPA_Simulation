@@ -22,7 +22,7 @@ def main():
     print("--- Inizio Analisi del Transitorio (FIFO vs. DWFQ) ---")
 
     NUM_REPLICATIONS = 5
-    SIM_DURATION = 30000 # Durata lunga per garantire il raggiungimento dello stato stazionario
+    SIM_DURATION = 10000 # Durata lunga per garantire il raggiungimento dello stato stazionario
 
     arrival_scenarios = {
         "steady_load_170": lambda t: 170,

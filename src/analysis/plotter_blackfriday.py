@@ -539,7 +539,7 @@ class PlotterBlackFriday:
             # CORREZIONE 3: Legenda in basso a sinistra
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='upper right', fontsize=14, title='Legenda',
+            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])

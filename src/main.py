@@ -24,7 +24,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     os.makedirs(output_dir, exist_ok=True)
 
     # --- Parametri della simulazione ---
-    simulation_duration = 20000
+    simulation_duration = config.STEADY_SIMULATION_TIME
     steady_lambda_fn = lambda t: 85
 
     print(f"--- Configurazione: Durata={simulation_duration}s, Tasso di Arrivo={steady_lambda_fn(0)} req/s ---")
@@ -81,7 +81,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
         print(f"    - Numero di campioni dopo thinning: {len(values_only_sampled)}")
 
         print("  - Stima del periodo di warm-up...")
-        warmup_time = analyzer.estimate_warmup(values_only_sampled, full_data_sampled)
+        warmup_time = config.WARMUP
         print(f"    - Warm-up stimato a: {warmup_time:.2f} secondi")
 
         steady_values = [v for t, v in full_data_sampled if t >= warmup_time]
@@ -115,10 +115,9 @@ def run_steady_state_experiment(rng_manager: RNGManager):
 
 if __name__ == "__main__":
 
-    if config.STEADY_ENABLED:
-        rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
-        run_steady_state_experiment(rng_manager_for_steady_state)
-    else:
-        print("\n--- Analisi Steady-State disabilitata. Impostare STEADY_ENABLED = True in config.py. ---")
+
+    rng_manager_for_steady_state = RNGManager(master_seed=config.LEHMER_SEED)
+    run_steady_state_experiment(rng_manager_for_steady_state)
+
 
     print("\n--- Processo di Simulazione e Analisi Concluso ---")
