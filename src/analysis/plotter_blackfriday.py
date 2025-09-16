@@ -369,66 +369,103 @@ class PlotterBlackFriday:
         return mean, mean - w, mean + w
 
     def plot_confidence_interval_trace(self, all_results: dict, lambda_func, output_dir: str, confidence=0.95):
-        print("\n--- Generazione Grafico IC (metodo estimate.py) Stile Avanzato ---")
-        plt.style.use('seaborn-v0_8-whitegrid')
-        sim_time = self.config.SIMULATION_TIME
-        num_replications = len(all_results)
-        models_to_plot = {'baseline': 'Baseline (FIFO)', 'wfq': 'DWFQ'}
-        time_bin_size = '30s'
-        for model_key, model_name_display in models_to_plot.items():
-            replication_series = []
-            for i in range(num_replications):
-                metrics = all_results[i].get(model_key)
-                if not metrics: continue
-                if model_key == 'baseline':
-                    history = [h for rt, h_list in metrics.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH for h in h_list]
-                else:
-                    history = metrics.response_times_history_by_prio.get(config.Priority.HIGH, [])
-                if not history: continue
-                times, values = zip(*history)
-                s = pd.Series(values, index=pd.to_datetime(times, unit='s'))
-                replication_series.append(s.resample(time_bin_size).mean())
-            if not replication_series: continue
-            df = pd.concat(replication_series, axis=1)
-            results = []
-            for index, row in df.iterrows():
-                sample = row.dropna().tolist()
-                mean, ci_lower, ci_upper = self._calculate_confidence_interval_from_estimate_py(sample, confidence)
-                results.append({'time': index, 'mean': mean, 'ci_lower': ci_lower, 'ci_upper': ci_upper})
-            results_df = pd.DataFrame(results).set_index('time').dropna()
-            if results_df.empty: continue
-            fig, ax = plt.subplots(figsize=(20, 10))
-            ax.set_title(f'Tempo di Risposta Medio (HIGH Prio) con Intervallo di Confidenza al {int(confidence*100)}%\n'
-                         f'Modello: {model_name_display} - Basato su {num_replications} Repliche',
-                         fontsize=18, fontweight='bold')
-            time_in_seconds = (results_df.index - pd.to_datetime(0, unit='s')).total_seconds()
-            ax.plot(time_in_seconds, results_df['mean'], color='darkcyan', lw=2.5, label='Media tra Repliche')
-            ax.fill_between(time_in_seconds, results_df['ci_lower'], results_df['ci_upper'], color='darkcyan', alpha=0.2, label='Intervallo di Confidenza')
-            ax_load = ax.twinx()
-            load_times = np.linspace(0, sim_time, num=int(sim_time))
-            load_values = [lambda_func(t) for t in load_times]
-            ax_load.plot(load_times, load_values, color='dimgray', linestyle=':', lw=2.5, alpha=0.8, label='Carico Applicato')
-            ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
-            ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
-            ax.set_xlabel("Tempo di Simulazione (s)", fontsize=16)
-            ax.set_ylabel("Tempo di Risposta Medio (s)", fontsize=16)
-            ax.tick_params(axis='both', which='major', labelsize=14)
-            x_padding = sim_time * 0.02
-            ax.set_xlim(left=-x_padding, right=sim_time + x_padding)
-            ax.set_ylim(bottom=0)
-            ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
-            ax.xaxis.set_minor_locator(mticker.AutoMinorLocator(5))
-            ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
-            for spine in ax.spines.values():
-                spine.set_linewidth(1.5)
-                spine.set_edgecolor('black')
-            lines, labels = ax.get_legend_handles_labels()
-            lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
-                      title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
-            fig.tight_layout()
-            self._save_plot(output_dir, f"confidence_trace_blackfriday_{model_key}.png", fig)
+            """
+            CORRETTO (v4): Risolve un grave bottleneck di performance invertendo
+            l'ordine di resample e concat per una gestione efficiente della memoria.
+            """
+            # Rimuoviamo le stampe di debug non più necessarie
+            print("\n--- Generazione Grafico IC su Medie Cumulative ---")
+            plt.style.use('seaborn-v0_8-whitegrid')
+            sim_time = self.config.SIMULATION_TIME
+            num_replications = len(all_results)
 
+            models_to_plot = {'baseline': 'Baseline (FIFO)', 'wfq': 'DWFQ'}
+            resample_freq = '10s'
+
+            for model_key, model_name_display in models_to_plot.items():
+
+                # **MODIFICA CHIAVE INIZIA QUI**
+
+                all_resampled_series = [] # Useremo una nuova lista
+                for i in range(num_replications):
+                    metrics = all_results[i].get(model_key)
+                    if not metrics: continue
+
+                    if model_key == 'baseline':
+                        history = [h for rt, h_list in metrics.response_times_history.items() if self.config.REQUEST_TYPE_TO_PRIORITY.get(rt) == config.Priority.HIGH for h in h_list]
+                    else:
+                        history = metrics.response_times_history_by_prio.get(config.Priority.HIGH, [])
+
+                    times, cumulative_values = self._calculate_cumulative_average(history)
+                    if not times: continue
+
+                    series = pd.Series(cumulative_values, index=pd.to_datetime(times, unit='s'), name=f"rep_{i}")
+
+                    # 1. FACCIAMO IL RESAMPLE QUI, sulla singola serie (molto più veloce)
+                    resampled = series.resample(resample_freq).ffill()
+                    all_resampled_series.append(resampled)
+
+                if not all_resampled_series:
+                    print(f"ATTENZIONE: Nessuna serie generata per il modello '{model_key}'. Salto il grafico.")
+                    continue
+
+                # 2. ORA CONCATENIAMO le serie già piccole e allineate (istantaneo)
+                df_aligned = pd.concat(all_resampled_series, axis=1).dropna(how='all')
+
+                # **MODIFICA CHIAVE FINISCE QUI**
+
+                # Il resto del codice da qui in poi è identico e funzionerà correttamente
+                results = []
+                for time_index, row in df_aligned.iterrows():
+                    sample = row.dropna().tolist()
+                    mean, ci_lower, ci_upper = self._calculate_confidence_interval_from_estimate_py(sample, confidence)
+                    results.append({'time': time_index, 'mean': mean, 'ci_lower': ci_lower, 'ci_upper': ci_upper})
+
+                results_df = pd.DataFrame(results).set_index('time').dropna()
+                if results_df.empty:
+                    print(f"ATTENZIONE: Nessun dato valido dopo il calcolo statistico per '{model_key}'. Salto il grafico.")
+                    continue
+
+                # --- 4. Plotting ---
+                fig, ax = plt.subplots(figsize=(20, 10))
+
+                ax.set_title(f'Tempo di Risposta Medio Cumulativo (HIGH Prio) con Intervallo di Confidenza al {int(confidence*100)}%\n'
+                             f'Modello: {model_name_display} - Basato su {num_replications} Repliche - 50 req/s',
+                             fontsize=18, fontweight='bold')
+
+                time_in_seconds = (results_df.index - pd.to_datetime(0, unit='s')).total_seconds()
+
+                ax.plot(time_in_seconds, results_df['mean'], color='darkcyan', lw=2.5, label='Media Cumulativa tra Repliche')
+                ax.fill_between(time_in_seconds, results_df['ci_lower'], results_df['ci_upper'], color='darkcyan', alpha=0.2, label='Intervallo di Confidenza')
+
+                ax_load = ax.twinx()
+                load_times = np.linspace(0, sim_time, num=int(sim_time))
+                load_values = [lambda_func(t) for t in load_times]
+                ax_load.plot(load_times, load_values, color='dimgray', linestyle=':', lw=2.5, alpha=0.8, label='Carico Applicato')
+                ax_load.set_ylabel("Carico (req/s)", color='dimgray', fontsize=16)
+                ax_load.tick_params(axis='y', labelsize=14, labelcolor='dimgray')
+
+                ax.set_xlabel("Tempo di Simulazione (s)", fontsize=16)
+                ax.set_ylabel("Tempo di Risposta Medio Cumulativo (s)", fontsize=16)
+                ax.tick_params(axis='both', which='major', labelsize=14)
+
+                x_padding = sim_time * 0.02
+                ax.set_xlim(left=-x_padding, right=sim_time + x_padding)
+                ax.set_ylim(bottom=0)
+
+                ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=15, integer=True))
+                ax.grid(True, which='both', linestyle='--', linewidth=0.7, alpha=0.7)
+                for spine in ax.spines.values():
+                    spine.set_linewidth(1.5)
+                    spine.set_edgecolor('black')
+
+                lines, labels = ax.get_legend_handles_labels()
+                lines2, labels2 = ax_load.get_legend_handles_labels()
+                ax.legend(lines + lines2, labels + labels2, loc='upper right', fontsize=14, title='Legenda',
+                          title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
+
+                fig.tight_layout()
+                self._save_plot(output_dir, f"confidence_trace_cumulative_blackfriday_{model_key}.png", fig)
 
     def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
         """
@@ -443,7 +480,7 @@ class PlotterBlackFriday:
 
         for model_key, model_name_display in models_to_plot.items():
             fig, ax = plt.subplots(figsize=(20, 10))
-            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario di carico: 85 req/s',
+            fig.suptitle(f'Analisi delle Repliche: {model_name_display}\nScenario di carico: 50 req/s',
                          fontsize=22, weight='bold')
 
             colors = sns.color_palette("husl", n_colors=num_replications)
@@ -502,7 +539,7 @@ class PlotterBlackFriday:
             # CORREZIONE 3: Legenda in basso a sinistra
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
+            ax.legend(lines + lines2, labels + labels2, loc='upper right', fontsize=14, title='Legenda',
                       title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])

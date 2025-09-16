@@ -15,7 +15,7 @@ def main_blackfriday_analysis():
     print("="*80)
 
     NUM_REPLICATIONS = 5
-    config.SIMULATION_TIME = 2000
+    config.SIMULATION_TIME = 3000
 
     t_notte_fine = config.SIMULATION_TIME * 0.15
     t_mattina_fine = config.SIMULATION_TIME * 0.30
@@ -24,10 +24,10 @@ def main_blackfriday_analysis():
     t_pomeriggio_fine = config.SIMULATION_TIME * 0.70
     t_sera_fine = config.SIMULATION_TIME * 0.85
 
-    CARICO_1 = 85
-    CARICO_2 = 85
-    CARICO_3 = 85
-    CARICO_4 = 85
+    CARICO_1 = 50
+    CARICO_2 = 50
+    CARICO_3 = 50
+    CARICO_4 = 50
 
     def lambda_black_friday(t: float) -> float:
         if t < t_notte_fine:
