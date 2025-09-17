@@ -1,7 +1,4 @@
-# In main_blackfriday.py
 
-import numpy as np
-import os
 from src import config
 from src.simulation.simulator_blackfriday import SimulatorBlackFridayBaseline, SimulatorBlackFriday as SimulatorBlackFridayDWFQ
 from src.utils.metrics import Metrics
@@ -14,7 +11,7 @@ def main_blackfriday_analysis():
     print("ANALISI SCENARIO 'BLACK FRIDAY' ")
     print("="*80)
 
-    NUM_REPLICATIONS = 5
+    NUM_REPLICATIONS = 50
     config.SIMULATION_TIME = 3000
 
     t_notte_fine = config.SIMULATION_TIME * 0.15

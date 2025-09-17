@@ -343,8 +343,7 @@ class PlotterBlackFriday:
     def _calculate_cumulative_average(history: list):
         """
         Calcola la media cumulativa da una history di tuple (timestamp, valore).
-        CORRETTO (v2): Gestisce i timestamp duplicati aggregandoli tramite media
-        per rendere il calcolo robusto prima della creazione della Serie Pandas.
+        Restituisce i timestamp e i valori della media cumulativa.
         """
         if not history or len(history) < 2:
             return [], []
@@ -402,7 +401,7 @@ class PlotterBlackFriday:
 
             for model_key, model_name_display in models_to_plot.items():
 
-                # **MODIFICA CHIAVE INIZIA QUI**
+
 
                 all_resampled_series = [] # Useremo una nuova lista
                 for i in range(num_replications):
@@ -418,8 +417,9 @@ class PlotterBlackFriday:
                     if not times: continue
 
                     series = pd.Series(cumulative_values, index=pd.to_datetime(times, unit='s'), name=f"rep_{i}")
+                    #per i duplicati
+                    series = series.groupby(series.index).mean()
 
-                    # 1. FACCIAMO IL RESAMPLE QUI, sulla singola serie (molto più veloce)
                     resampled = series.resample(resample_freq).ffill()
                     all_resampled_series.append(resampled)
 
@@ -427,12 +427,9 @@ class PlotterBlackFriday:
                     print(f"ATTENZIONE: Nessuna serie generata per il modello '{model_key}'. Salto il grafico.")
                     continue
 
-                # 2. ORA CONCATENIAMO le serie già piccole e allineate (istantaneo)
+
                 df_aligned = pd.concat(all_resampled_series, axis=1).dropna(how='all')
 
-                # **MODIFICA CHIAVE FINISCE QUI**
-
-                # Il resto del codice da qui in poi è identico e funzionerà correttamente
                 results = []
                 for time_index, row in df_aligned.iterrows():
                     sample = row.dropna().tolist()
@@ -483,7 +480,7 @@ class PlotterBlackFriday:
                           title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
                 fig.tight_layout()
-                self._save_plot(output_dir, f"confidence_trace_cumulative_blackfriday_{model_key}.png", fig)
+                self._save_plot(output_dir, f"confidence_trace_cumulative_blackfriday_{model_key}50.png", fig)
 
     def plot_blackfriday_replication_traces(self, all_results: dict, lambda_func, output_dir: str):
         """
@@ -557,8 +554,14 @@ class PlotterBlackFriday:
             # CORREZIONE 3: Legenda in basso a sinistra
             lines, labels = ax.get_legend_handles_labels()
             lines2, labels2 = ax_load.get_legend_handles_labels()
-            ax.legend(lines + lines2, labels + labels2, loc='lower right', fontsize=14, title='Legenda',
-                      title_fontsize=15, frameon=True, facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
+
+            filtered_lines = [(l, lab) for l, lab in zip(lines, labels) if "Seed" not in lab]
+            final_lines = [l for l, _ in filtered_lines] + lines2
+            final_labels = [lab for _, lab in filtered_lines] + labels2
+
+            ax.legend(final_lines, final_labels, loc='lower right', fontsize=14,
+                      title='Legenda', title_fontsize=15, frameon=True,
+                      facecolor='white', edgecolor='black', shadow=True, framealpha=0.9)
 
             fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-            self._save_plot(output_dir, f"replication_traces_cumulative_blackfriday_{model_key}.png", fig)
+            self._save_plot(output_dir, f"replication_traces_cumulative_blackfriday_{model_key}50.png", fig)
