@@ -1,6 +1,23 @@
 import os
+import os
 import pandas as pd
+import math
 from statistics import mean
+import scipy.stats as st
+
+
+def mean_and_ci(data, confidence=0.95):
+    """Calcola media e semi-ampiezza IC (confidence interval) per una lista."""
+    n = len(data)
+    if n == 0:
+        return None, None
+    m = mean(data)
+    if n == 1:
+        return m, 0
+    sem = st.sem(data)  # errore standard
+    h = sem * st.t.ppf((1 + confidence) / 2., n - 1)
+    return m, h
+
 
 def export_summary(metrics, output_dir="output", label='non_prioritized', by_priority=False):
     os.makedirs(output_dir, exist_ok=True)
@@ -16,127 +33,110 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
         total_completed = sum(metrics.requests_completed_by_priority.values())
         total_timed_out = sum(metrics.requests_timed_out_by_priority.values())
 
-        summary_rows.append({
-            'Metric': 'Total Requests Generated',
-            'Value': total_gen
-        })
-        summary_rows.append({
-            'Metric': 'Total Requests Completed',
-            'Value': total_completed
-        })
-        summary_rows.append({
-            'Metric': 'Total Requests Timed Out',
-            'Value': total_timed_out
-        })
-        summary_rows.append({
-            'Metric': 'Remaining in Queue',
-            'Value': total_gen - total_completed - total_timed_out
-        })
+        summary_rows.append({'Metric': 'Total Requests Generated', 'Mean': total_gen, 'CI_halfwidth': None})
+        summary_rows.append({'Metric': 'Total Requests Completed', 'Mean': total_completed, 'CI_halfwidth': None})
+        summary_rows.append({'Metric': 'Total Requests Timed Out', 'Mean': total_timed_out, 'CI_halfwidth': None})
+        summary_rows.append({'Metric': 'Remaining in Queue', 'Mean': total_gen - total_completed - total_timed_out, 'CI_halfwidth': None})
 
         # Metriche per priorità
         for prio, lst in metrics.response_times_by_priority.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{prio.name} - Avg Response Time",
-                    'Value': mean(lst)
-                })
-                summary_rows.append({
-                    'Metric': f"{prio.name} - Max Response Time",
-                    'Value': max(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{prio.name} - Avg Response Time", 'Mean': m, 'CI_halfwidth': h})
+                summary_rows.append({'Metric': f"{prio.name} - Max Response Time", 'Mean': max(lst), 'CI_halfwidth': None})
 
         for prio, lst in metrics.wait_times_by_priority.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{prio.name} - Avg Wait Time",
-                    'Value': mean(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{prio.name} - Avg Wait Time", 'Mean': m, 'CI_halfwidth': h})
 
-        # Metriche per tipo di richiesta
         for req_type, lst in metrics.response_times_by_req_type.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - Avg Response Time (type)",
-                    'Value': mean(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{req_type.name} - Avg Response Time (type)", 'Mean': m, 'CI_halfwidth': h})
 
         for req_type, lst in metrics.wait_times_by_req_type.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - Avg Wait Time (type)",
-                    'Value': mean(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{req_type.name} - Avg Wait Time (type)", 'Mean': m, 'CI_halfwidth': h})
 
-        # P_loss per priorità
         for prio in metrics.requests_generated_by_priority:
             generated = metrics.requests_generated_by_priority[prio]
             timed_out = metrics.requests_timed_out_by_priority[prio]
             if generated > 0:
                 p_loss = timed_out / generated
-                summary_rows.append({
-                    'Metric': f"{prio.name} - P_loss",
-                    'Value': p_loss
-                })
+                summary_rows.append({'Metric': f"{prio.name} - P_loss", 'Mean': p_loss, 'CI_halfwidth': None})
 
-        # P_loss per tipo di richiesta
         for req_type in metrics.requests_timed_out_by_req_type:
-
             completed = len(metrics.response_times_by_req_type[req_type])
             timed_out = metrics.requests_timed_out_by_req_type[req_type]
             total_for_type = completed + timed_out
             if total_for_type > 0:
                 p_loss = timed_out / total_for_type
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - P_loss (type)",
-                    'Value': p_loss
-                })
+                summary_rows.append({'Metric': f"{req_type.name} - P_loss (type)", 'Mean': p_loss, 'CI_halfwidth': None})
 
     else:
         # Gestione Metrics (baseline)
-        summary_rows.append({
-            'Metric': 'Total Requests Generated',
-            'Value': metrics.total_requests_generated
-        })
-        summary_rows.append({
-            'Metric': 'Total Requests Served',
-            'Value': metrics.total_requests_served
-        })
-        summary_rows.append({
-            'Metric': 'Total Requests Timed Out',
-            'Value': sum(metrics.requests_timed_out_data.values())
-        })
+        summary_rows.append({'Metric': 'Total Requests Generated', 'Mean': metrics.total_requests_generated, 'CI_halfwidth': None})
+        summary_rows.append({'Metric': 'Total Requests Served', 'Mean': metrics.total_requests_served, 'CI_halfwidth': None})
+        summary_rows.append({'Metric': 'Total Requests Timed Out', 'Mean': sum(metrics.requests_timed_out_data.values()), 'CI_halfwidth': None})
 
-        # Metriche per tipo di richiesta
         for req_type, lst in metrics.response_times_data.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - Avg Response Time",
-                    'Value': mean(lst)
-                })
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - Max Response Time",
-                    'Value': max(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{req_type.name} - Avg Response Time", 'Mean': m, 'CI_halfwidth': h})
+                summary_rows.append({'Metric': f"{req_type.name} - Max Response Time", 'Mean': max(lst), 'CI_halfwidth': None})
 
         for req_type, lst in metrics.wait_times_data.items():
-            if lst:  # Solo se ci sono dati
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - Avg Wait Time",
-                    'Value': mean(lst)
-                })
+            if lst:
+                m, h = mean_and_ci(lst)
+                summary_rows.append({'Metric': f"{req_type.name} - Avg Wait Time", 'Mean': m, 'CI_halfwidth': h})
 
-        # P_loss per tipo di richiesta (baseline)
         for req_type in metrics.requests_generated_data:
             generated = metrics.requests_generated_data[req_type]
             timed_out = metrics.requests_timed_out_data[req_type]
             if generated > 0:
                 p_loss = timed_out / generated
-                summary_rows.append({
-                    'Metric': f"{req_type.name} - P_loss",
-                    'Value': p_loss
-                })
+                summary_rows.append({'Metric': f"{req_type.name} - P_loss", 'Mean': p_loss, 'CI_halfwidth': None})
 
     df_summary = pd.DataFrame(summary_rows)
+
+    # Calculate CI bounds
+    df_summary['ci_lower_bound'] = df_summary.apply(
+        lambda row: row['Mean'] - row['CI_halfwidth'] if pd.notna(row['CI_halfwidth']) else None,
+        axis=1
+    )
+    df_summary['ci_upper_bound'] = df_summary.apply(
+        lambda row: row['Mean'] + row['CI_halfwidth'] if pd.notna(row['CI_halfwidth']) else None,
+        axis=1
+    )
+
+    # Rename columns to match the desired output format
+    df_summary = df_summary.rename(columns={
+        'Metric': 'metric',
+        'Mean': 'mean',
+        'CI_halfwidth': 'half_width'
+    })
+
+    # Reorder columns to match the desired format
+    df_summary = df_summary[['metric', 'mean', 'half_width', 'ci_lower_bound', 'ci_upper_bound']]
+
+    # Print to console in tabular format
+    print("\n--- Aggregated Summary Report ---")
+    print(f"{'metric':<25} | {'mean':>15} | {'half_width':>20} | {'[ci_lower_bound, ci_upper_bound]':>30}")
+    print("-" * 100)
+    for index, row in df_summary.iterrows():
+        mean_str = f"{row['mean']:.6f}" if pd.notna(row['mean']) else "N/A"
+        half_width_str = f"{row['half_width']:.6f}" if pd.notna(row['half_width']) else "N/A"
+        ci_bounds_str = "N/A"
+        if pd.notna(row['ci_lower_bound']) and pd.notna(row['ci_upper_bound']):
+            ci_bounds_str = f"[{row['ci_lower_bound']:.6f}, {row['ci_upper_bound']:.6f}]"
+        print(
+            f"{row['metric']:<25} | {mean_str:>15} | {half_width_str:>20} | "
+            f"{ci_bounds_str:>30}"
+        )
+    print("-" * 100)
+
 
     # -------- Sheet 2: System Snapshots --------
     if by_priority:
@@ -168,13 +168,20 @@ def export_summary(metrics, output_dir="output", label='non_prioritized', by_pri
     if by_priority:
         completion_data = []
         for prio in metrics.completion_timestamps_by_priority:
-            for ts, resp in zip(metrics.completion_timestamps_by_priority[prio],
-                                metrics.response_times_at_completion_by_priority[prio]):
-                completion_data.append({
-                    'priority': prio.name,
-                    'completion_timestamp': ts,
-                    'response_time': resp
-                })
+            # CORRECTED: Use response_times_by_priority for raw values, not welford object
+            timestamps = metrics.completion_timestamps_by_priority[prio]
+            response_times = metrics.response_times_by_priority[prio]
+
+            if len(timestamps) == len(response_times): # Ensure lists are aligned
+                for ts, resp in zip(timestamps, response_times):
+                    completion_data.append({
+                        'priority': prio.name,
+                        'completion_timestamp': ts,
+                        'response_time': resp
+                    })
+            else:
+                print(f"WARNING: Mismatch in length for completion data for priority {prio.name}. Skipping log for this priority.")
+
         df_completion = pd.DataFrame(completion_data)
     else:
         # Per baseline, creiamo un log basato sui dati storici

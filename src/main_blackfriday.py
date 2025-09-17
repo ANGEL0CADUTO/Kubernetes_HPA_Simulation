@@ -1,10 +1,24 @@
+from statistics import mean
 
 from src import config
+from src.config import CONFIDENCE_LEVEL, RequestType, Priority
 from src.simulation.simulator_blackfriday import SimulatorBlackFridayBaseline, SimulatorBlackFriday as SimulatorBlackFridayDWFQ
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
 from analysis.plotter_blackfriday import PlotterBlackFriday
 from src.utils.lehmer_rng import LehmerRNG as RNGManager
+import scipy.stats as st
+
+def mean_and_ci(data, confidence=0.95):
+    n = len(data)
+    if n == 0:
+        return None, None
+    m = mean(data)
+    if n == 1:
+        return m, 0
+    sem = st.sem(data)
+    h = sem * st.t.ppf((1 + confidence) / 2., n - 1)
+    return m, h
 
 def main_blackfriday_analysis():
     print("="*80)
@@ -21,10 +35,10 @@ def main_blackfriday_analysis():
     t_pomeriggio_fine = config.SIMULATION_TIME * 0.70
     t_sera_fine = config.SIMULATION_TIME * 0.85
 
-    CARICO_1 = 50
-    CARICO_2 = 50
-    CARICO_3 = 50
-    CARICO_4 = 50
+    CARICO_1 = 170
+    CARICO_2 = 170
+    CARICO_3 = 170
+    CARICO_4 = 170
 
     def lambda_black_friday(t: float) -> float:
         if t < t_notte_fine:
@@ -73,6 +87,91 @@ def main_blackfriday_analysis():
         }
 
     print(f"\n\n{'='*30} FINE DI TUTTE LE REPLICHE {'='*30}")
+
+    baseline_results_by_type = {req_type: [] for req_type in RequestType}
+    all_baseline_resp_times_total = []
+    all_baseline_wait_times_total = []
+
+    wfq_results_by_priority = {prio: [] for prio in Priority}
+    all_wfq_resp_times_total = []
+    all_wfq_wait_times_total = []
+
+    # --- Aggregazione dati da tutte le repliche ---
+    for rep_id, rep_data in all_results.items():
+        # Baseline
+        baseline_metrics = rep_data['baseline']
+        if baseline_metrics:
+            # Response times
+            for req_type, resp_times in baseline_metrics.response_times_data.items():
+                baseline_results_by_type[req_type].extend(resp_times)
+                all_baseline_resp_times_total.extend(resp_times)
+            # Wait times
+            for req_type, wait_times in baseline_metrics.wait_times_data.items():
+                all_baseline_wait_times_total.extend(wait_times)
+
+        # WFQ
+        wfq_metrics = rep_data['wfq']
+        if wfq_metrics:
+            # Response times by priority
+            for prio, resp_times in wfq_metrics.response_times_by_priority.items():
+                wfq_results_by_priority[prio].extend(resp_times)
+                all_wfq_resp_times_total.extend(resp_times)
+            # Wait times by priority
+            for prio, wait_times in wfq_metrics.wait_times_by_priority.items():
+                all_wfq_wait_times_total.extend(wait_times)
+
+    # --- Stampa finale Baseline ---
+    print(f"\n{'='*30} RISULTATI FINALI FIFO (BASELINE) {'='*30}")
+    print(f"Intervallo di Confidenza al {CONFIDENCE_LEVEL * 100:.0f}%")
+    print(f"{'Tipo Richiesta':<20} | {'Media Resp (s)':>15} | {'Semi-Ampiezza (±s)':>20} | {'IC (s)'}")
+    print("-"*100)
+
+    # Totale Response Time
+    m_total, h_total = mean_and_ci(all_baseline_resp_times_total, confidence=CONFIDENCE_LEVEL)
+    if m_total is not None:
+        print(f"{'TOTALE':<20} | {m_total:15.6f} | {h_total:20.6f} | [{m_total-h_total:.6f}, {m_total+h_total:.6f}]")
+    else:
+        print(f"{'TOTALE':<20} | {'N/A':>15} | {'N/A':>20} | {'[N/A, N/A]':>27}")
+
+    # Response time per RequestType
+    for req_type in RequestType:
+        data = baseline_results_by_type[req_type]
+        m, h = mean_and_ci(data, confidence=CONFIDENCE_LEVEL)
+        if m is not None:
+            print(f"{req_type.name:<20} | {m:15.6f} | {h:20.6f} | [{m-h:.6f}, {m+h:.6f}]")
+        else:
+            print(f"{req_type.name:<20} | {'N/A':>15} | {'N/A':>20} | {'[N/A, N/A]':>27}")
+
+    # Totale Wait Time
+    m_total_wait, h_total_wait = mean_and_ci(all_baseline_wait_times_total, confidence=CONFIDENCE_LEVEL)
+    if m_total_wait is not None:
+        print(f"{'TOTALE Wait':<20} | {m_total_wait:15.6f} | {h_total_wait:20.6f} | [{m_total_wait-h_total_wait:.6f}, {m_total_wait+h_total_wait:.6f}]")
+
+    # --- Stampa finale WFQ ---
+    print(f"\n{'='*30} RISULTATI FINALI DWFQ {'='*30}")
+    print(f"Intervallo di Confidenza al {CONFIDENCE_LEVEL * 100:.0f}%")
+    print(f"{'Priorità':<20} | {'Media Resp (s)':>15} | {'Semi-Ampiezza (±s)':>20} | {'IC (s)'}")
+    print("-"*100)
+
+    # Totale Response Time WFQ
+    m_total_wfq, h_total_wfq = mean_and_ci(all_wfq_resp_times_total, confidence=CONFIDENCE_LEVEL)
+    if m_total_wfq is not None:
+        print(f"{'TOTALE':<20} | {m_total_wfq:15.6f} | {h_total_wfq:20.6f} | [{m_total_wfq-h_total_wfq:.6f}, {m_total_wfq+h_total_wfq:.6f}]")
+
+    # Response time per Priority
+    for prio in Priority:
+        data = wfq_results_by_priority[prio]
+        m, h = mean_and_ci(data, confidence=CONFIDENCE_LEVEL)
+        if m is not None:
+            print(f"{prio.name:<20} | {m:15.6f} | {h:20.6f} | [{m-h:.6f}, {m+h:.6f}]")
+        else:
+            print(f"{prio.name:<20} | {'N/A':>15} | {'N/A':>20} | {'[N/A, N/A]':>27}")
+
+    m_total_wait_wfq, h_total_wait_wfq = mean_and_ci(all_wfq_wait_times_total, confidence=CONFIDENCE_LEVEL)
+    if m_total_wait_wfq is not None:
+        print(f"{'TOTALE Wait':<20} | {m_total_wait_wfq:15.6f} | {h_total_wait_wfq:20.6f} | [{m_total_wait_wfq-h_total_wait_wfq:.6f}, {m_total_wait_wfq+h_total_wait_wfq:.6f}]")
+
+
 
     if all_results:
         # Inizializziamo il plotter con i dati della prima replica, solo per soddisfare il costruttore
