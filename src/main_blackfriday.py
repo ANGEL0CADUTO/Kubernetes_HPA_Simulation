@@ -5,7 +5,7 @@ from src.config import CONFIDENCE_LEVEL, RequestType, Priority
 from src.simulation.simulator_blackfriday import SimulatorBlackFridayBaseline, SimulatorBlackFriday as SimulatorBlackFridayDWFQ
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from analysis.plotter_blackfriday import PlotterBlackFriday
+from src.analysis.plotter_blackfriday import PlotterBlackFriday
 from src.utils.lehmer_rng import LehmerRNG as RNGManager
 import scipy.stats as st
 

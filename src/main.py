@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 
 from src import config
@@ -99,7 +100,7 @@ def run_steady_state_experiment(rng_manager: RNGManager):
     # ==========================================================================
     print("\n--- [FASE 3/3] Generazione Report Grafici Finali ---")
 
-    plt.style.use('./style/plot_style.mplstyle')
+    plt.style.use(Path(__file__).parent / 'style' / 'plot_style.mplstyle')
     print("  - Stile 'plot_style.mplstyle' caricato.")
 
     steady_plotter = SteadyStatePlotter(config)

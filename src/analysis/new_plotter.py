@@ -1,5 +1,4 @@
 import os
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,7 +10,6 @@ from src.utils.metrics_with_priority import MetricsWithPriority
 import matplotlib.ticker as mticker
 from matplotlib.ticker import MaxNLocator
 
-matplotlib.use('Qt5Agg')
 
 class newPlotter:
     """

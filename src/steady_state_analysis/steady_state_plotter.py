@@ -149,7 +149,7 @@ class SteadyStatePlotter:
                 )
                 print(f"  - Generazione grafici cumulativi per lo scenario: {scenario}")
                 # Estrai i dati necessari
-                results = all_results.get(scenario, {})
+                results = all_results.get(scenario) or {}
                 steady_values = all_steady_values.get(scenario, [])
 
                 b = results.get('batch_size')
@@ -188,7 +188,6 @@ class SteadyStatePlotter:
                 print(f"  - ATTENZIONE: Dati o risultati mancanti per lo scenario '{scenario}'. Grafico non generato.")
 
         print("\n--- Report grafici generati con successo. ---")
-
 
 
 

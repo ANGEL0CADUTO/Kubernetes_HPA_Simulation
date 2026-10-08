@@ -70,7 +70,7 @@ venv.bak/
 .idea/
 .vscode/
 *.swp
-.sonarlint/  # <-- La nostra aggiunta specifica!
+.sonarlint/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -86,3 +86,7 @@ venv.bak/
 *.pyc
 *.pyo
 *.pyd
+
+# Generated experiment results (reference plots are kept under src/output/)
+/output/
+/plots/

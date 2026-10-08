@@ -46,9 +46,9 @@ def compute_batch_size(data, k_initial_target, threshold):
 
         current_k = n // b # Questo è il numero effettivo di batch per la dimensione `b` corrente
 
-        # Dobbiamo avere almeno 2 batch per calcolare rho1 e fare il test di indipendenza
-        if current_k < 2:
-            return None, None, None # Non è possibile trovare un b, k valido
+        # Increasing b can only reduce k, so the acceptance condition cannot recover.
+        if current_k <= 64:
+            return None, None, None
 
         # Estrai le medie dei batch
         batches = np.array([

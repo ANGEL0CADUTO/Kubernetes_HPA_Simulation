@@ -2,12 +2,11 @@ import numpy as np
 import os
 from src import config
 from src.simulation.simulator import Simulator
-# ALIAS CORRETTO: Usiamo SimulatorPriority per chiarezza.
 from src.simulation.simulator_with_priority import SimulatorWithPriority as SimulatorPriority
 from src.simulation.simulator_wfq import SimulatorWFQ
 from src.utils.metrics import Metrics
 from src.utils.metrics_with_priority import MetricsWithPriority
-from analysis.plotter_wfq import PlotterWFQ
+from src.analysis.plotter_wfq import PlotterWFQ
 from src.utils.lehmer_rng import LehmerRNG as RNGManager
 
 def main_wfq_analysis():
@@ -15,7 +14,7 @@ def main_wfq_analysis():
     print("ANALISI FINALE DI CONFRONTO (ARCHITETTURA A SILOS): FIFO vs. PRIORITA' vs. WFQ")
     print("="*80)
 
-    NUM_REPLICATIONS = 5 # Manteniamo 1 per un'analisi più rapida dei grafici
+    NUM_REPLICATIONS = 5
     CARICO_BASE = 6
     CARICO_PICCO = 300
     INIZIO_PICCO = 200
@@ -48,12 +47,12 @@ def main_wfq_analysis():
         print("\n--- Esecuzione Modello 1: Baseline (FIFO) ---")
         simulator_base.run(config.SIMULATION_TIME)
 
-        # # 2. Priorità Strette
-        # rng_prio = RNGManager(master_seed=master_seed_replica)
-        # streams_prio, _ = rng_prio.get_replication_streams()
-        # simulator_prio = SimulatorPriority(config, MetricsWithPriority, streams_prio['arrivals'], streams_prio['choice'], streams_prio['service'], lambda_con_picco)
-        # print("\n--- Esecuzione Modello 2: Priorità Strette ---")
-        # simulator_prio.run(config.SIMULATION_TIME)
+        # 2. Priorità Strette
+        rng_prio = RNGManager(master_seed=master_seed_replica)
+        streams_prio, _ = rng_prio.get_replication_streams()
+        simulator_prio = SimulatorPriority(config, MetricsWithPriority, streams_prio['arrivals'], streams_prio['choice'], streams_prio['service'], lambda_con_picco)
+        print("\n--- Esecuzione Modello 2: Priorità Strette ---")
+        simulator_prio.run(config.SIMULATION_TIME)
 
         # 3. Weighted Fair Queuing (WFQ)
         rng_wfq = RNGManager(master_seed=master_seed_replica)
@@ -69,12 +68,12 @@ def main_wfq_analysis():
         plotter = PlotterWFQ(
             # Metriche aggregate per i grafici a livello di cluster
             metrics_base_agg=simulator_base.metrics_agg,
-            # metrics_prio_agg=simulator_prio.metrics_agg,
+            metrics_prio_agg=simulator_prio.metrics_agg,
             metrics_wfq_agg=simulator_wfq.metrics_agg,
 
             # Metriche per-worker per l'analisi degli hotspot
             metrics_per_worker_base=simulator_base.metrics_per_worker,
-            # metrics_per_worker_prio=simulator_prio.metrics_per_worker,
+            metrics_per_worker_prio=simulator_prio.metrics_per_worker,
             metrics_per_worker_wfq=simulator_wfq.metrics_per_worker,
 
             config_module=config
